@@ -1,0 +1,5 @@
+[package]
+name = "memur"
+version = "0.1.0"
+authors = ["Nerijus Arlauskas <nercury@gmail.com>"]
+edition = "2018"
