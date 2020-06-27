@@ -4,8 +4,10 @@ use crate::droplist::{DropList, DropListWriteResult};
 mod droplist;
 mod dontdothis;
 mod list;
+mod ustr;
 
 pub use list::List;
+pub use ustr::UStr;
 
 struct ArenaMemoryInstance {
     free_blocks: VecDeque<Box<[u8]>>,
@@ -120,13 +122,25 @@ impl BlockMetadata {
     }
 
     #[inline(always)]
-    pub unsafe fn reinterpret_from_slice_ptr(slice: &mut [u8]) -> *mut BlockMetadata {
+    pub unsafe fn reinterpret_from_slice_ptr_mut(slice: &mut [u8]) -> *mut BlockMetadata {
         dontdothis::slice_as_value_ref_mut::<BlockMetadata>(slice)
     }
 
     #[inline(always)]
-    pub unsafe fn reinterpret_from_slice<'a, 'b>(slice: &'a mut [u8]) -> &'b mut BlockMetadata {
+    pub unsafe fn reinterpret_from_slice_ptr(slice: &[u8]) -> *const BlockMetadata {
+        dontdothis::slice_as_value_ref::<BlockMetadata>(slice)
+    }
+
+    #[inline(always)]
+    pub unsafe fn reinterpret_from_slice_mut<'a, 'b>(slice: &'a mut [u8]) -> &'b mut BlockMetadata {
         std::mem::transmute::<*mut BlockMetadata, &mut BlockMetadata>(
+            BlockMetadata::reinterpret_from_slice_ptr_mut(slice)
+        )
+    }
+
+    #[inline(always)]
+    pub unsafe fn reinterpret_from_slice<'a, 'b>(slice: &'a [u8]) -> &'b BlockMetadata {
+        std::mem::transmute::<*const BlockMetadata, &BlockMetadata>(
             BlockMetadata::reinterpret_from_slice_ptr(slice)
         )
     }
@@ -145,7 +159,7 @@ impl Block {
     }
 
     pub unsafe fn set_previous_block(&mut self, block: Block) {
-        let metadata = BlockMetadata::reinterpret_from_slice(&mut *self.data);
+        let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
         metadata.previous_block = Some(block);
     }
 
@@ -160,7 +174,7 @@ impl Block {
     }
 
     pub unsafe fn push_copy<T>(&mut self, value: &T) -> Option<*mut T> {
-        let metadata = BlockMetadata::reinterpret_from_slice(&mut *self.data);
+        let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
         let align = std::mem::align_of::<T>();
         let padding = (align - (metadata.next_item_offset % align)) % align;
         let aligned = metadata.next_item_offset + padding;
@@ -179,10 +193,30 @@ impl Block {
     }
 
     unsafe fn into_previous_block_and_data(mut self) -> (Option<Block>, Box<[u8]>) {
-        let metadata = BlockMetadata::reinterpret_from_slice(&mut *self.data);
+        let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
         let mut block = None;
         std::mem::swap(&mut block, &mut metadata.previous_block);
         (block, self.data)
+    }
+
+    fn remaining_bytes_for_alignment<T>(&self) -> (isize, usize) {
+        let metadata = unsafe { BlockMetadata::reinterpret_from_slice(&*self.data) };
+        let align = std::mem::align_of::<T>();
+        let padding = (align - (metadata.next_item_offset % align)) % align;
+        let aligned = metadata.next_item_offset + padding;
+        (self.data.len() as isize - aligned as isize, aligned)
+    }
+
+    pub unsafe fn upload_bytes_unchecked(&mut self, aligned_start: usize, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
+        let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
+        let end = aligned_start + len;
+        debug_assert!(end <= self.data.len(), "upload_bytes_unchecked end <= data.len");
+        let target_slice = &mut self.data[aligned_start..];
+        for (inbyte, outbyte) in value.zip(target_slice.iter_mut()) {
+            *outbyte = inbyte;
+        }
+        metadata.next_item_offset = end;
+        target_slice.as_mut_ptr()
     }
 }
 
@@ -255,6 +289,34 @@ impl ArenaInstance {
         std::mem::forget(value);
         value_ptr
     }
+
+    pub unsafe fn upload_no_drop_bytes(&mut self, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
+        let last_block = self.last_block.as_mut().unwrap();
+        let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<[u8; 1]>();
+        if remaining_bytes_for_alignment >= len as isize {
+            return last_block.upload_bytes_unchecked(aligned_start, len, value);
+        }
+
+        let mut block = Some(Block::new(self.memory.take_block()));
+        std::mem::swap(&mut block, &mut self.last_block);
+        let last_block = self.last_block.as_mut().unwrap();
+        last_block.set_previous_block(block.unwrap());
+
+        let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<[u8; 1]>();
+        if remaining_bytes_for_alignment >= len as isize {
+            return last_block.upload_bytes_unchecked(aligned_start, len, value);
+        }
+
+        unreachable!("upload_no_drop_bytes failed after acquiring next block")
+    }
+
+    // unsafe fn next_block(&mut self) -> &mut Block {
+    //     let mut block = Some(Block::new(self.memory.take_block()));
+    //     std::mem::swap(&mut block, &mut self.last_block);
+    //     let last_block = self.last_block.as_mut().unwrap();
+    //     last_block.set_previous_block(block.unwrap());
+    //     last_block
+    // }
 }
 
 impl Drop for ArenaInstance {
@@ -295,6 +357,10 @@ impl Arena {
         std::cell::RefCell::borrow_mut(&self.shared).upload_no_drop(value)
     }
 
+    pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
+        std::cell::RefCell::borrow_mut(&self.shared).upload_no_drop_bytes(len, value)
+    }
+
     pub fn n<T>(&self, value: T) -> N<T> {
         N {
             _arena: self.clone(),
@@ -309,7 +375,7 @@ pub struct N<T> {
 }
 
 #[cfg(test)]
-mod tests {
+mod arena_tests {
     use crate::{ArenaMemory, Arena};
 
     struct Compact {

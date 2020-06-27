@@ -109,9 +109,9 @@ impl<T> List<T> {
 }
 
 #[cfg(test)]
-mod tests {
+mod list_tests {
     use crate::{ArenaMemory, Arena};
-    use crate::list::List;
+    use crate::List;
     use std::fmt::Debug;
 
     struct Compact<T> where T: Debug {
