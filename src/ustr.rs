@@ -113,6 +113,11 @@ impl UStr {
         }
     }
 
+    /// Initialize from `char*`.
+    pub fn from_cstr_ptr(arena: &Arena, bytes: *const i8) -> Result<UStr, UStrError> {
+        UStr::from_cstr(arena, unsafe { CStr::from_ptr(bytes) })
+    }
+
     /// Initialize from &str.
     pub fn from_str(arena: &Arena, value: &str) -> Result<UStr, UStrError> {
         if value.len() > MAX_USTR {
@@ -137,6 +142,11 @@ impl UStr {
             cstr_with_nul_len: cstr_with_nul_len as u16,
             first: ptr,
         })
+    }
+
+    /// Get pointer to `char*`.
+    pub fn as_ptr(&self) -> *const i8 {
+        self.first as *const i8
     }
 }
 
