@@ -3,13 +3,13 @@ use std::ptr::null_mut;
 
 const MAX_ITEMS: usize = 32;
 
-struct PartialSequence<T> {
+struct PartialSequence<T> where T: Sized {
     items: [*mut T; MAX_ITEMS],
     next_list: *mut PartialSequence<T>,
     used_items: u16,
 }
 
-impl<T> PartialSequence<T> {
+impl<T> PartialSequence<T> where T: Sized {
     pub fn empty() -> PartialSequence<T> {
         PartialSequence {
             items: [null_mut(); MAX_ITEMS],
@@ -31,14 +31,14 @@ impl<T> PartialSequence<T> {
 
 /// Append-only list
 // don't clone
-pub struct List<T> {
+pub struct List<T> where T: Sized {
     arena: WeakArena,
     _len: u32,
     _first: *mut PartialSequence<T>,
     _last: *mut PartialSequence<T>,
 }
 
-impl<T> List<T> {
+impl<T> List<T> where T: Sized {
     /// Initializes a new list in arena and returns a handle to it.
     pub fn new(arena: &Arena) -> Result<List<T>, UploadError> {
         unsafe {
@@ -135,7 +135,7 @@ impl<T> List<T> {
     }
 }
 
-impl<T> std::fmt::Debug for List<T> where T: std::fmt::Debug {
+impl<T> std::fmt::Debug for List<T> where T: std::fmt::Debug, T: Sized {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut list = f.debug_list();
         for i in self.empty_if_dead_iter() {
