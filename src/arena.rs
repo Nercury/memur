@@ -160,7 +160,7 @@ impl ArenaMetadata {
         let last_block = self.last_block.as_mut().unwrap();
         last_block.set_previous_block(block.unwrap());
 
-        let value_ptr = last_block.push_copy::<T>(&value).ok().expect("fits into subsequent block (1)");
+        let value_ptr = last_block.push_copy::<T>(&value).ok().expect("fits into subsequent block (2)");
         std::mem::forget(value);
         Ok(value_ptr)
     }
