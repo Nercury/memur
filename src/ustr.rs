@@ -113,8 +113,8 @@ impl UStr {
         }
     }
 
-    /// Initialize from `char*`.
-    pub fn from_cstr_ptr(arena: &Arena, bytes: *const i8) -> Result<UStr, UStrError> {
+    /// Initialize from `char*` which comes from a trusted source.
+    pub fn from_strusted_cstr_ptr(arena: &Arena, bytes: *const i8) -> Result<UStr, UStrError> {
         UStr::from_cstr(arena, unsafe { CStr::from_ptr(bytes) })
     }
 
