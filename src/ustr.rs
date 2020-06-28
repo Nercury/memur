@@ -4,6 +4,7 @@ use std::str::Utf8Error;
 use std::fmt::{Display, Debug};
 use std::error::Error;
 
+/// Error creating or uploading universal string.
 #[derive(Debug)]
 pub enum UStrError {
     CStrIsNotUtf8(Utf8Error),
