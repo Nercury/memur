@@ -53,8 +53,19 @@ impl<T> List<T> {
         }
     }
 
+    #[inline(always)]
+    pub fn len(&self) -> u32 {
+        self._len
+    }
+
+    /// Iterates over the item references in arena, returns no items if the arena is dead.
+    #[inline(always)]
+    pub fn empty_if_dead_iter(&self) -> impl Iterator<Item=&T> {
+        self.iter().into_iter().flatten()
+    }
+
     /// Iterates over the item references in arena if the arena is alive.
-    pub fn iter(&mut self) -> Option<impl Iterator<Item=&T>> {
+    pub fn iter(&self) -> Option<impl Iterator<Item=&T>> {
         struct State<T> {
             current: *mut PartialSequence<T>,
             index: usize,
@@ -72,6 +83,12 @@ impl<T> List<T> {
                 state.index += 1;
                 Some(unsafe { std::mem::transmute::<*mut T, &T>(item) })
             }))
+    }
+
+    /// Iterates over the mutable item references in arena, returns no items if the arena is dead.
+    #[inline(always)]
+    pub fn empty_if_dead_iter_mut(&mut self) -> impl Iterator<Item=&mut T> {
+        self.iter_mut().into_iter().flatten()
     }
 
     /// Iterates over the mutable item references in arena if the arena is alive.
@@ -142,12 +159,18 @@ mod list_tests {
             let mem = Memory::new();
             let arena = Arena::new(&mem);
             let mut list = List::new(&arena);
+            assert_eq!(0, list.len());
             list.push(Compact { value: 1 });
+            assert_eq!(1, list.len());
             list.push(Compact { value: 2 });
+            assert_eq!(2, list.len());
             list.push(Compact { value: 3 });
+            assert_eq!(3, list.len());
             list.push(Compact { value: 4 });
+            assert_eq!(4, list.len());
             list.push(Compact { value: 5 });
-            for (i, item) in (1..=5).zip(list.iter_mut().unwrap()) {
+            assert_eq!(5, list.len());
+            for (i, item) in (1..=5).zip(list.empty_if_dead_iter()) {
                 assert_eq!(i, item.value);
             }
         };
@@ -162,7 +185,7 @@ mod list_tests {
             for i in 0..super::MAX_ITEMS * 3 {
                 list.push(Compact { value: i });
             }
-            for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.iter_mut().unwrap()) {
+            for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.empty_if_dead_iter_mut()) {
                 assert_eq!(i, item.value);
             }
         };

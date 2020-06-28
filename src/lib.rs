@@ -7,7 +7,7 @@ mod list;
 mod ustr;
 mod n;
 
-pub use memory::Memory;
+pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
 pub use ustr::UStr;
 pub use arena::{WeakArena, Arena};

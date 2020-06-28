@@ -150,6 +150,8 @@ pub struct WeakArena {
 
 /// `Arena` is a memory block container that executes `drop` for your objects when it goes out of scope.
 ///
+/// It can not be used between threads. Create a separate `WeakArena` for each thread.
+///
 /// You can use this `Arena` to upload data to memory and receive a pointer to this data.
 /// Behind the scenes, the `Arena` will bump the pointer inside the current block, copy
 /// your structure into that location, and return this pointer back. If the `Arena` runs out of blocks,
