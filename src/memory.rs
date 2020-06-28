@@ -25,7 +25,7 @@ impl ArenaMemoryInstance {
     fn check_if_not_enough_blocks_and_initialize(&mut self) {
         if self.free_blocks.len() < self.min_free_blocks_before_allocating_new as usize {
             while self.free_blocks.len() < self.max_free_blocks_to_initialize_or_cleanup_to as usize {
-                println!("-- init   block of size {}", self.new_block_size);
+                //println!("-- init   block of size {}", self.new_block_size);
                 self.free_blocks.push_front(vec![0u8; self.new_block_size as usize].into_boxed_slice());
             }
         }
@@ -37,7 +37,7 @@ impl ArenaMemoryInstance {
         while self.free_blocks.len() > self.max_free_blocks_to_initialize_or_cleanup_to as usize {
             if let Some(block) = self.free_blocks.pop_front() {
                 cleaned_up_size += block.len();
-                println!("-- clean  block of size {}", block.len());
+                //println!("-- clean  block of size {}", block.len());
             }
         }
         cleaned_up_size
@@ -47,14 +47,14 @@ impl ArenaMemoryInstance {
         self.check_if_not_enough_blocks_and_initialize();
         let block = self.free_blocks.pop_back().expect("no allocated memory");
 
-        println!("-- take   block of size {}", block.len());
+        //println!("-- take   block of size {}", block.len());
 
         block
     }
 
     pub fn return_block(&mut self, block: Box<[u8]>) {
 
-        println!("-- return block of size {}", block.len());
+        //println!("-- return block of size {}", block.len());
 
         self.free_blocks.push_back(block);
     }

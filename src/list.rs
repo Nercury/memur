@@ -147,7 +147,7 @@ mod list_tests {
 
     impl<T> Drop for Compact<T> where T: Debug {
         fn drop(&mut self) {
-            println!("drop {:?}", self.value);
+            //println!("drop {:?}", self.value);
         }
     }
 

@@ -72,26 +72,26 @@ impl ArenaMetadata {
     pub fn inc_rc(&mut self) {
         self.strong_rc += 1;
         self.rc += 1;
-        println!("inc_rc s {} t {}", self.strong_rc, self.rc);
+        //println!("inc_rc s {} t {}", self.strong_rc, self.rc);
     }
 
     #[inline(always)]
     pub fn dec_rc(&mut self) {
         self.strong_rc -= 1;
         self.rc -= 1;
-        println!("dec_rc s {} t {}", self.strong_rc, self.rc);
+        //println!("dec_rc s {} t {}", self.strong_rc, self.rc);
     }
 
     #[inline(always)]
     pub fn inc_weak(&mut self) {
         self.rc += 1;
-        println!("inc_wk s {} t {}", self.strong_rc, self.rc);
+        //println!("inc_wk s {} t {}", self.strong_rc, self.rc);
     }
 
     #[inline(always)]
     pub fn dec_weak(&mut self) {
         self.rc -= 1;
-        println!("dec_wk s {} t {}", self.strong_rc, self.rc);
+        //println!("dec_wk s {} t {}", self.strong_rc, self.rc);
     }
 
     unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> Result<(), UploadError> {
@@ -114,6 +114,8 @@ impl ArenaMetadata {
         })
     }
 
+    /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
+    /// item when there are no remaining `Arena` instances.
     pub unsafe fn upload_auto_drop<T>(&mut self, value: T) -> Result<*mut T, UploadError> {
         let last_block = self.last_block.as_mut().unwrap();
         match last_block.push_copy::<T>(&value) {
@@ -139,6 +141,7 @@ impl ArenaMetadata {
         Ok(value_ptr)
     }
 
+    /// Place item to arena and return a pointer to it, without adding a drop function.
     pub unsafe fn upload_no_drop<T>(&mut self, value: T) -> Result<*mut T, UploadError> {
         let last_block = self.last_block.as_mut().unwrap();
         match last_block.push_copy::<T>(&value) {
@@ -162,6 +165,7 @@ impl ArenaMetadata {
         Ok(value_ptr)
     }
 
+    /// Place a chunk of bytes to arena and return a pointer to the first byte.
     pub unsafe fn upload_no_drop_bytes(&mut self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         let last_block = self.last_block.as_mut().unwrap();
         let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<[u8; 1]>();
@@ -270,23 +274,28 @@ impl Arena {
         std::mem::transmute::<*mut ArenaMetadata, &mut ArenaMetadata>(self.metadata)
     }
 
+    /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
+    /// item when there are no remaining `Arena` instances.
     #[inline(always)]
     pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         self.md().upload_auto_drop::<T>(value)
     }
 
+    /// Place item to arena and return a pointer to it, without adding a drop function.
     #[inline(always)]
     pub unsafe fn upload_no_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         self.md().upload_no_drop::<T>(value)
     }
 
+    /// Place a chunk of bytes to arena and return a pointer to the first byte.
     #[inline(always)]
     pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         self.md().upload_no_drop_bytes(len, value)
     }
 
+    /// Clone as `WeakArena`.
     pub fn to_weak_arena(&self) -> WeakArena {
-        println!("split weak arena");
+        //println!("split weak arena");
         unsafe { self.md().inc_weak() };
         WeakArena {
             metadata: self.metadata,
@@ -306,6 +315,8 @@ impl WeakArena {
         std::mem::transmute::<*mut ArenaMetadata, &mut ArenaMetadata>(self.metadata)
     }
 
+    /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
+    /// item when there are no remaining `Arena` instances.
     #[inline(always)]
     pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         if self.is_alive() {
@@ -315,6 +326,7 @@ impl WeakArena {
         }
     }
 
+    /// Place item to arena and return a pointer to it, without adding a drop function.
     #[inline(always)]
     pub unsafe fn upload_no_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         if self.is_alive() {
@@ -324,6 +336,7 @@ impl WeakArena {
         }
     }
 
+    /// Place a chunk of bytes to arena and return a pointer to the first byte.
     #[inline(always)]
     pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         if self.is_alive() {
@@ -336,7 +349,7 @@ impl WeakArena {
     /// Try to upgrade `WeakArena` to `Arena`.
     pub fn arena(&self) -> Option<Arena> {
         if self.is_alive() {
-            println!("upgrade weak to strong arena");
+            //println!("upgrade weak to strong arena");
             unsafe { self.md().inc_rc() };
             Some(Arena {
                 metadata: self.metadata,
@@ -349,7 +362,7 @@ impl WeakArena {
 
 impl Clone for Arena {
     fn clone(&self) -> Self {
-        println!("clone arena");
+        //println!("clone arena");
         let metadata = self.metadata;
         unsafe { (*metadata).inc_rc(); }
         Arena {
@@ -360,7 +373,7 @@ impl Clone for Arena {
 
 impl Clone for WeakArena {
     fn clone(&self) -> Self {
-        println!("clone weak");
+        //println!("clone weak");
         let metadata = self.metadata;
         unsafe { (*metadata).inc_weak(); }
         WeakArena {
@@ -371,18 +384,18 @@ impl Clone for WeakArena {
 
 impl Drop for Arena {
     fn drop(&mut self) {
-        println!("drop arena");
+        //println!("drop arena");
 
         let metadata = unsafe { self.md() };
         (*metadata).dec_rc();
 
         if (*metadata).strong_rc == 0 {
-            println!("drop arena objects");
+            //println!("drop arena objects");
             unsafe { (*metadata).drop_objects() };
         }
 
         if (*metadata).rc == 0 {
-            println!("reclaim memory");
+            //println!("reclaim memory");
             unsafe { metadata.reclaim_memory() };
             // this should be the last use of this metadata
         }
@@ -391,13 +404,13 @@ impl Drop for Arena {
 
 impl Drop for WeakArena {
     fn drop(&mut self) {
-        println!("drop weak");
+        //println!("drop weak");
 
         let metadata = unsafe { self.md() };
         (*metadata).dec_weak();
 
         if (*metadata).rc == 0 {
-            println!("reclaim memory");
+            //println!("reclaim memory");
             unsafe { metadata.reclaim_memory() };
             // this should be the last use of this metadata
         }
