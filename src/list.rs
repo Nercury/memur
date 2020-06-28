@@ -135,6 +135,16 @@ impl<T> List<T> {
     }
 }
 
+impl<T> std::fmt::Debug for List<T> where T: std::fmt::Debug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut list = f.debug_list();
+        for i in self.empty_if_dead_iter() {
+            list.entry(i);
+        }
+        list.finish()
+    }
+}
+
 #[cfg(test)]
 mod list_tests {
     use crate::{Memory, Arena};

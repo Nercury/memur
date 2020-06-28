@@ -6,12 +6,14 @@ mod memory;
 mod list;
 mod ustr;
 mod n;
+mod traits;
 
 pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
 pub use ustr::{UStr, UStrError};
 pub use arena::{WeakArena, Arena, UploadError};
 pub use n::N;
+pub use traits::MemurIterator;
 
 #[cfg(test)]
 pub mod dropflag;
