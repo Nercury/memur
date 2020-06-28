@@ -90,6 +90,12 @@ impl MemoryBuilder {
         self.new_block_size = size;
         self
     }
+
+    pub fn build(self) -> Memory {
+        Memory {
+            shared: std::sync::Arc::new(std::sync::Mutex::new(ArenaMemoryInstance::new(&self)))
+        }
+    }
 }
 
 /// Container of shared memory blocks.
