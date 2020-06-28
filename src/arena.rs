@@ -1,7 +1,55 @@
 use crate::Memory;
 use crate::droplist::{DropList, DropListWriteResult};
 use std::ptr::null_mut;
-use crate::block::Block;
+use crate::block::{Block, PlacementError};
+use std::fmt::Debug;
+
+/// Error while trying to place data in arena block.
+#[derive(Debug)]
+pub enum UploadError {
+    /// Droplist does not fit in a block.
+    ///
+    /// Arena has drop lists to efficiently execute item drop functions, and they hold around 1000
+    /// items at minimum.
+    ///
+    /// Solution: increase block size.
+    DropListDoesNotFit,
+
+    /// Item does not fit in a block.
+    ///
+    /// When there is not enough space in a block, another block is allocated. This error occurs only
+    /// if item is bigger than the maximum possible free space in a block.
+    ItemDoesNotFit,
+
+    /// Metadata does not fit in a block.
+    ///
+    /// Arena stores its metadata in the first block. This metadata contains pointers to first/last
+    /// droplists, memory block (yeah a bit circular here), weak and total reference counts.
+    /// This error occurs when this metadata does not fit in a block, and should happen on `Arena`
+    /// initialization only.
+    MetadataDoesNotFit,
+
+    /// Arena was dropped.
+    ///
+    /// The main `Arena` is dropped and the drop function may have been executed for any containing item.
+    /// This action is not available.
+    ArenaIsNotAlive,
+}
+
+impl std::fmt::Display for UploadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UploadError::DropListDoesNotFit => std::fmt::Display::fmt("Drop list does not fit in a block", f),
+            UploadError::ItemDoesNotFit => std::fmt::Display::fmt("Item is bigger than a block", f),
+            UploadError::MetadataDoesNotFit => std::fmt::Display::fmt("Metadata does not fit in a first arena block", f),
+            UploadError::ArenaIsNotAlive => std::fmt::Display::fmt("Arena is not alive", f),
+        }
+    }
+}
+
+impl std::error::Error for UploadError {
+
+}
 
 /// Information about arena injected in first allocated arena memory block.
 struct ArenaMetadata {
@@ -40,13 +88,16 @@ impl ArenaMetadata {
         println!("dec_wk s {} t {}", self.strong_rc, self.rc);
     }
 
-    unsafe fn push_drop_fn<T>(&mut self, data: *const u8) {
+    unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> Result<(), UploadError> {
         debug_assert_ne!(null_mut(), self.first_drop_list, "push: drop list not null (1)");
         debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (2)");
 
-        match (*self.last_drop_list).push_drop_fn::<T>(data) {
+        Ok(match (*self.last_drop_list).push_drop_fn::<T>(data) {
             DropListWriteResult::ListFull => {
-                let next_drop_list = self.upload_no_drop(DropList::empty());
+                let next_drop_list = match self.upload_no_drop(DropList::empty()) {
+                    Ok(v) => v,
+                    Err(_) => return Err(UploadError::DropListDoesNotFit),
+                };
                 (*self.last_drop_list).set_next_list(next_drop_list);
                 self.last_drop_list = next_drop_list;
                 if let DropListWriteResult::ListFull = (*self.last_drop_list).push_drop_fn::<T>(data) {
@@ -54,33 +105,21 @@ impl ArenaMetadata {
                 }
             },
             DropListWriteResult::ListNotFull => (),
-        }
+        })
     }
 
-    pub unsafe fn upload_auto_drop<T>(&mut self, value: T) -> *mut T {
+    pub unsafe fn upload_auto_drop<T>(&mut self, value: T) -> Result<*mut T, UploadError> {
         let last_block = self.last_block.as_mut().unwrap();
-        if let Some(value_ptr) = last_block.push_copy::<T>(&value) {
-            std::mem::forget(value);
-            self.push_drop_fn::<T>(value_ptr as *const u8);
-            return value_ptr;
-        }
-
-        let mut block = Some(Block::new(self.memory.take_block()));
-        std::mem::swap(&mut block, &mut self.last_block);
-        let last_block = self.last_block.as_mut().unwrap();
-        last_block.set_previous_block(block.unwrap());
-
-        let value_ptr = last_block.push_copy::<T>(&value).expect("fits into subsequent block (1)");
-        std::mem::forget(value);
-        self.push_drop_fn::<T>(value_ptr as *const u8);
-        value_ptr
-    }
-
-    pub unsafe fn upload_no_drop<T>(&mut self, value: T) -> *mut T {
-        let last_block = self.last_block.as_mut().unwrap();
-        if let Some(value_ptr) = last_block.push_copy::<T>(&value) {
-            std::mem::forget(value);
-            return value_ptr;
+        match last_block.push_copy::<T>(&value) {
+            Ok(value_ptr) => {
+                std::mem::forget(value);
+                self.push_drop_fn::<T>(value_ptr as *const u8)?;
+                return Ok(value_ptr);
+            },
+            Err(e) => match e {
+                PlacementError::NotEnoughSpaceInBlock => (),
+                PlacementError::ItemTooBig => return Err(UploadError::ItemDoesNotFit),
+            }
         }
 
         let mut block = Some(Block::new(self.memory.take_block()));
@@ -88,16 +127,44 @@ impl ArenaMetadata {
         let last_block = self.last_block.as_mut().unwrap();
         last_block.set_previous_block(block.unwrap());
 
-        let value_ptr = last_block.push_copy::<T>(&value).expect("fits into subsequent block (2)");
+        let value_ptr = last_block.push_copy::<T>(&value).ok().expect("fits into subsequent block (1)");
         std::mem::forget(value);
-        value_ptr
+        self.push_drop_fn::<T>(value_ptr as *const u8)?;
+        Ok(value_ptr)
     }
 
-    pub unsafe fn upload_no_drop_bytes(&mut self, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
+    pub unsafe fn upload_no_drop<T>(&mut self, value: T) -> Result<*mut T, UploadError> {
+        let last_block = self.last_block.as_mut().unwrap();
+        match last_block.push_copy::<T>(&value) {
+            Ok(value_ptr) => {
+                std::mem::forget(value);
+                return Ok(value_ptr);
+            },
+            Err(e) => match e {
+                PlacementError::NotEnoughSpaceInBlock => (),
+                PlacementError::ItemTooBig => return Err(UploadError::ItemDoesNotFit),
+            }
+        }
+
+        let mut block = Some(Block::new(self.memory.take_block()));
+        std::mem::swap(&mut block, &mut self.last_block);
+        let last_block = self.last_block.as_mut().unwrap();
+        last_block.set_previous_block(block.unwrap());
+
+        let value_ptr = last_block.push_copy::<T>(&value).ok().expect("fits into subsequent block (1)");
+        std::mem::forget(value);
+        Ok(value_ptr)
+    }
+
+    pub unsafe fn upload_no_drop_bytes(&mut self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         let last_block = self.last_block.as_mut().unwrap();
         let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<[u8; 1]>();
         if remaining_bytes_for_alignment >= len as isize {
-            return last_block.upload_bytes_unchecked(aligned_start, len, value);
+            return Ok(last_block.upload_bytes_unchecked(aligned_start, len, value));
+        }
+
+        if len > last_block.largest_item_size() {
+            return Err(UploadError::ItemDoesNotFit);
         }
 
         let mut block = Some(Block::new(self.memory.take_block()));
@@ -107,7 +174,7 @@ impl ArenaMetadata {
 
         let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<[u8; 1]>();
         if remaining_bytes_for_alignment >= len as isize {
-            return last_block.upload_bytes_unchecked(aligned_start, len, value);
+            return Ok(last_block.upload_bytes_unchecked(aligned_start, len, value));
         }
 
         unreachable!("upload_no_drop_bytes failed after acquiring next block")
@@ -173,10 +240,10 @@ pub struct Arena {
 }
 
 impl Arena {
-    pub fn new(memory: &Memory) -> Arena {
+    pub fn new(memory: &Memory) -> Result<Arena, UploadError> {
         let mut memory = memory.clone();
         let mut block = Block::new(memory.take_block());
-        let drop_list = unsafe { block.push(DropList::empty()) }.expect("first droplist fits");
+        let drop_list = unsafe { block.push(DropList::empty()) }.map_err(|_| UploadError::DropListDoesNotFit)?;
         let metadata = unsafe { block.push(ArenaMetadata {
             memory,
             last_block: None,
@@ -184,12 +251,12 @@ impl Arena {
             last_drop_list: drop_list,
             strong_rc: 1,
             rc: 1
-        }) }.expect("arena metadata fits");
+        }) }.map_err(|_| UploadError::MetadataDoesNotFit)?;
         unsafe { (*metadata).last_block = Some(block) };
 
-        Arena {
+        Ok(Arena {
             metadata,
-        }
+        })
     }
 
     #[inline(always)]
@@ -198,17 +265,17 @@ impl Arena {
     }
 
     #[inline(always)]
-    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> *mut T {
+    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         self.md().upload_auto_drop::<T>(value)
     }
 
     #[inline(always)]
-    pub unsafe fn upload_no_drop<T>(&self, value: T) -> *mut T {
+    pub unsafe fn upload_no_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         self.md().upload_no_drop::<T>(value)
     }
 
     #[inline(always)]
-    pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
+    pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         self.md().upload_no_drop_bytes(len, value)
     }
 
@@ -234,29 +301,29 @@ impl WeakArena {
     }
 
     #[inline(always)]
-    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Option<*mut T> {
+    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         if self.is_alive() {
-            Some(self.md().upload_auto_drop::<T>(value))
+            Ok(self.md().upload_auto_drop::<T>(value)?)
         } else {
-            None
+            Err(UploadError::ArenaIsNotAlive)
         }
     }
 
     #[inline(always)]
-    pub unsafe fn upload_no_drop<T>(&self, value: T) -> Option<*mut T> {
+    pub unsafe fn upload_no_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
         if self.is_alive() {
-            Some(self.md().upload_no_drop::<T>(value))
+            Ok(self.md().upload_no_drop::<T>(value)?)
         } else {
-            None
+            Err(UploadError::ArenaIsNotAlive)
         }
     }
 
     #[inline(always)]
-    pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> Option<*mut u8> {
+    pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         if self.is_alive() {
-            Some(self.md().upload_no_drop_bytes(len, value))
+            Ok(self.md().upload_no_drop_bytes(len, value)?)
         } else {
-            None
+            Err(UploadError::ArenaIsNotAlive)
         }
     }
 
@@ -373,8 +440,8 @@ mod arena_tests {
         let flag = DropFlag::new(RefCell::new(1));
         let mut obj = {
             let mem = Memory::new();
-            let arena = Arena::new(&mem);
-            let mut obj = N::new(&arena, Compact { value: flag.clone() });
+            let arena = Arena::new(&mem).unwrap();
+            let mut obj = N::new(&arena, Compact { value: flag.clone() }).unwrap();
 
             assert_eq!(1, *(*flag).borrow(), "drop was not called");
             assert_ne!(None, obj.val(), "value can be accessed");
@@ -395,7 +462,7 @@ mod arena_tests {
 
         let mem = Memory::new();
         let _obj = {
-            let arena = Arena::new(&mem);
+            let arena = Arena::new(&mem).unwrap();
             let obj = N::new(&arena,
                              Nested {
                                  dropflag: f1.clone(),
@@ -404,9 +471,9 @@ mod arena_tests {
                                                    dropflag: f2.clone(),
                                                    inner: ()
                                                }
-                                 )
+                                 ).unwrap()
                              }
-            );
+            ).unwrap();
 
             assert_eq!(1, *(*f1).borrow(), "drop was not called");
             assert_eq!(1, *(*f2).borrow(), "drop was not called");

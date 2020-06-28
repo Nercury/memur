@@ -1,4 +1,4 @@
-use crate::{Arena, WeakArena};
+use crate::{Arena, WeakArena, UploadError};
 use std::ptr::null_mut;
 
 const MAX_ITEMS: usize = 32;
@@ -40,16 +40,16 @@ pub struct List<T> {
 
 impl<T> List<T> {
     /// Initializes a new list in arena and returns a handle to it.
-    pub fn new(arena: &Arena) -> List<T> {
+    pub fn new(arena: &Arena) -> Result<List<T>, UploadError> {
         unsafe {
-            let starting_sequence = arena.upload_auto_drop(PartialSequence::empty());
+            let starting_sequence = arena.upload_auto_drop(PartialSequence::empty())?;
 
-            List {
+            Ok(List {
                 arena: arena.to_weak_arena(),
                 _len: 0,
                 _first: starting_sequence,
                 _last: starting_sequence,
-            }
+            })
         }
     }
 
@@ -113,27 +113,25 @@ impl<T> List<T> {
     }
 
     /// Appends a new item to list if the arena is alive.
-    pub fn push(&mut self, item: T) -> Option<()> {
-        match self.arena.arena() {
-            None => None,
-            Some(arena) => {
-                unsafe {
-                    if let Some(empty_slot) = (*self._last).take_empty_slot() {
-                        let item_ptr = arena.upload_auto_drop(item);
-                        *empty_slot = item_ptr;
-                    } else {
-                        let next_sequence = arena.upload_auto_drop(PartialSequence::empty());
-                        (*self._last).next_list = next_sequence;
-                        self._last = next_sequence;
-                        let item_ptr = arena.upload_auto_drop(item);
-                        let empty_slot = (*self._last).take_empty_slot().unwrap();
-                        *empty_slot = item_ptr;
-                    }
-                }
-                self._len += 1;
-                Some(())
-            },
+    pub fn push(&mut self, item: T) -> Result<(), UploadError> {
+        let arena = self.arena.arena().ok_or(UploadError::ArenaIsNotAlive)?;
+
+        unsafe {
+            if let Some(empty_slot) = (*self._last).take_empty_slot() {
+                let item_ptr = arena.upload_auto_drop(item)?;
+                *empty_slot = item_ptr;
+            } else {
+                let next_sequence = arena.upload_auto_drop(PartialSequence::empty())?;
+                (*self._last).next_list = next_sequence;
+                self._last = next_sequence;
+                let item_ptr = arena.upload_auto_drop(item)?;
+                let empty_slot = (*self._last).take_empty_slot().unwrap();
+                *empty_slot = item_ptr;
+            }
         }
+        self._len += 1;
+
+        Ok(())
     }
 }
 
@@ -157,18 +155,18 @@ mod list_tests {
     fn simple_test() {
         let _obj = {
             let mem = Memory::new();
-            let arena = Arena::new(&mem);
-            let mut list = List::new(&arena);
+            let arena = Arena::new(&mem).unwrap();
+            let mut list = List::new(&arena).unwrap();
             assert_eq!(0, list.len());
-            list.push(Compact { value: 1 });
+            list.push(Compact { value: 1 }).unwrap();
             assert_eq!(1, list.len());
-            list.push(Compact { value: 2 });
+            list.push(Compact { value: 2 }).unwrap();
             assert_eq!(2, list.len());
-            list.push(Compact { value: 3 });
+            list.push(Compact { value: 3 }).unwrap();
             assert_eq!(3, list.len());
-            list.push(Compact { value: 4 });
+            list.push(Compact { value: 4 }).unwrap();
             assert_eq!(4, list.len());
-            list.push(Compact { value: 5 });
+            list.push(Compact { value: 5 }).unwrap();
             assert_eq!(5, list.len());
             for (i, item) in (1..=5).zip(list.empty_if_dead_iter()) {
                 assert_eq!(i, item.value);
@@ -180,10 +178,10 @@ mod list_tests {
     fn many_items_test() {
         let _obj = {
             let mem = Memory::new();
-            let arena = Arena::new(&mem);
-            let mut list = List::new(&arena);
+            let arena = Arena::new(&mem).unwrap();
+            let mut list = List::new(&arena).unwrap();
             for i in 0..super::MAX_ITEMS * 3 {
-                list.push(Compact { value: i });
+                list.push(Compact { value: i }).unwrap();
             }
             for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.empty_if_dead_iter_mut()) {
                 assert_eq!(i, item.value);

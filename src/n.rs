@@ -1,4 +1,4 @@
-use crate::{WeakArena, Arena};
+use crate::{WeakArena, Arena, UploadError};
 
 /// A wrapper of struct that is stored in arena memory.
 // can't clone because can be accessed as mutable
@@ -9,11 +9,11 @@ pub struct N<T> {
 
 impl<T> N<T> {
     /// Stores the value in arena and returns a handle to it.
-    pub fn new(arena: &Arena, value: T) -> N<T> {
-        N {
+    pub fn new(arena: &Arena, value: T) -> Result<N<T>, UploadError> {
+        Ok(N {
             _arena: arena.to_weak_arena(),
-            _ptr: unsafe { arena.upload_auto_drop(value) },
-        }
+            _ptr: unsafe { arena.upload_auto_drop(value)? },
+        })
     }
 
     /// Returns a reference to value if the arena is alive.

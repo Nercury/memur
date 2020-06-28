@@ -1,24 +1,35 @@
-use crate::{Arena, WeakArena};
+use crate::{Arena, WeakArena, UploadError};
 use std::ffi::{CStr, CString};
 use std::str::Utf8Error;
 use std::fmt::{Display, Debug};
+use std::error::Error;
 
 #[derive(Debug)]
 pub enum UStrError {
     CStrIsNotUtf8(Utf8Error),
     StrContainsNul,
     StringIsTooLong { length: usize, max_size: usize },
+    UploadError(UploadError),
 }
 
 impl Display for UStrError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UStrError::CStrIsNotUtf8(e) => write!(f, "Input CStr is not valid UTF-8 - {}", e),
+            UStrError::UploadError(e) => write!(f, "Failed to upload to arena - {}", e),
             UStrError::StrContainsNul => Display::fmt("Input str slice contains nul", f),
             UStrError::StringIsTooLong { length, max_size } => write!(f, "Input string should be smaller than {} bytes, but was {}", max_size, length),
         }
     }
 }
+
+impl From<UploadError> for UStrError {
+    fn from(other: UploadError) -> Self {
+        UStrError::UploadError(other)
+    }
+}
+
+impl Error for UStrError {}
 
 const MAX_USTR: usize = u16::MAX as usize - 1;
 
@@ -96,7 +107,7 @@ impl UStr {
                 if str.len() > MAX_USTR {
                     return Err(UStrError::StringIsTooLong { length: str.len(), max_size: MAX_USTR });
                 }
-                Ok(unsafe { UStr::from_str_unchecked(arena, str) })
+                Ok(unsafe { UStr::from_str_unchecked(arena, str)? })
             },
             Err(e) => Err(UStrError::CStrIsNotUtf8(e)),
         }
@@ -114,18 +125,18 @@ impl UStr {
             }
         }
 
-        Ok(unsafe { UStr::from_str_unchecked(arena, value) })
+        Ok(unsafe { UStr::from_str_unchecked(arena, value)? })
     }
 
-    unsafe fn from_str_unchecked(arena: &Arena, value: &str) -> UStr {
+    unsafe fn from_str_unchecked(arena: &Arena, value: &str) -> Result<UStr, UploadError> {
         let bytes = value.as_bytes();
         let cstr_with_nul_len = bytes.len() + 1;
-        let ptr = arena.upload_no_drop_bytes(cstr_with_nul_len, bytes.iter().map(|v| *v).chain(std::iter::once(0u8)));
-        UStr {
+        let ptr = arena.upload_no_drop_bytes(cstr_with_nul_len, bytes.iter().map(|v| *v).chain(std::iter::once(0u8)))?;
+        Ok(UStr {
             _arena: arena.to_weak_arena(),
             cstr_with_nul_len: cstr_with_nul_len as u16,
             first: ptr,
-        }
+        })
     }
 }
 
@@ -155,7 +166,7 @@ mod ustr_tests {
     #[test]
     fn test_str() {
         let memory = Memory::new();
-        let arena = Arena::new(&memory);
+        let arena = Arena::new(&memory).unwrap();
         let str = UStr::from_str(&arena, "hello world!").expect("failed to create");
         assert_eq!("hello world!", &str);
         assert_eq!(&CString::new("hello world!").expect("ok"), &str);
@@ -164,7 +175,7 @@ mod ustr_tests {
     #[test]
     fn test_str_with_nul() {
         let memory = Memory::new();
-        let arena = Arena::new(&memory);
+        let arena = Arena::new(&memory).unwrap();
         assert_eq!(None, UStr::from_str(&arena, "hello\0world!").ok());
     }
 }

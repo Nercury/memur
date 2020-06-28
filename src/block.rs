@@ -1,5 +1,10 @@
 use crate::dontdothis;
 
+pub enum PlacementError {
+    NotEnoughSpaceInBlock,
+    ItemTooBig,
+}
+
 struct BlockMetadata {
     next_item_offset: usize,
     previous_block: Option<Block>,
@@ -65,24 +70,32 @@ impl Block {
         metadata.previous_block = Some(block);
     }
 
-    pub unsafe fn push<T>(&mut self, value: T) -> Option<*mut T> {
+    pub unsafe fn push<T>(&mut self, value: T) -> Result<*mut T, PlacementError> {
         match self.push_copy(&value) {
-            None => None,
-            Some(ptr) => {
+            Err(e) => Err(e),
+            Ok(ptr) => {
                 std::mem::forget(value);
-                Some(ptr)
+                Ok(ptr)
             },
         }
     }
 
-    pub unsafe fn push_copy<T>(&mut self, value: &T) -> Option<*mut T> {
+    pub fn largest_item_size(&self) -> usize {
+        self.data.len() - std::mem::size_of::<BlockMetadata>()
+    }
+
+    pub unsafe fn push_copy<T>(&mut self, value: &T) -> Result<*mut T, PlacementError> {
         let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
         let align = std::mem::align_of::<T>();
         let padding = (align - (metadata.next_item_offset % align)) % align;
         let aligned = metadata.next_item_offset + padding;
         let end = aligned + std::mem::size_of::<T>();
         if end > self.data.len() {
-            None
+            if std::mem::size_of::<T>() > self.largest_item_size() {
+                Err(PlacementError::ItemTooBig)
+            } else {
+                Err(PlacementError::NotEnoughSpaceInBlock)
+            }
         } else {
             let target_slice = &mut self.data[aligned..];
             let source_slice = dontdothis::value_as_slice(value);
@@ -90,7 +103,7 @@ impl Block {
                 *outbyte = *inbyte;
             }
             metadata.next_item_offset = end;
-            Some(dontdothis::slice_as_value_ref_mut::<T>(target_slice))
+            Ok(dontdothis::slice_as_value_ref_mut::<T>(target_slice))
         }
     }
 
