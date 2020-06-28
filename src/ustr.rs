@@ -22,6 +22,12 @@ impl Display for UStrError {
 
 const MAX_USTR: usize = u16::MAX as usize - 1;
 
+/// UTF-8 string that does not contain nul values, and is stored with nul termination
+/// for easy conversion to CStr.
+///
+/// This string is valid even when `Arena` is dropped, because it holds a weak arena reference
+/// which does not return memory back to `Memory` as long as it is alive. That said, make sure to
+/// drop all these strings to reclaim the memory.
 #[derive(Clone)]
 pub struct UStr {
     _arena: WeakArena,
@@ -83,6 +89,7 @@ impl PartialEq<UStr> for CString {
 impl Eq for UStr {}
 
 impl UStr {
+    /// Initialize from &CStr.
     pub fn from_cstr(arena: &Arena, value: &CStr) -> Result<UStr, UStrError> {
         match value.to_str() {
             Ok(str) => {
@@ -95,6 +102,7 @@ impl UStr {
         }
     }
 
+    /// Initialize from &str.
     pub fn from_str(arena: &Arena, value: &str) -> Result<UStr, UStrError> {
         if value.len() > MAX_USTR {
             return Err(UStrError::StringIsTooLong { length: value.len(), max_size: MAX_USTR });
@@ -114,7 +122,7 @@ impl UStr {
         let cstr_with_nul_len = bytes.len() + 1;
         let ptr = arena.upload_no_drop_bytes(cstr_with_nul_len, bytes.iter().map(|v| *v).chain(std::iter::once(0u8)));
         UStr {
-            _arena: arena.weak(),
+            _arena: arena.to_weak_arena(),
             cstr_with_nul_len: cstr_with_nul_len as u16,
             first: ptr,
         }
@@ -123,6 +131,8 @@ impl UStr {
 
 impl AsRef<str> for UStr {
     fn as_ref(&self) -> &str {
+        // potential access to weak arena
+        // but memory is returned only when the weak reference is dropped, so this is ok
         let slice = unsafe { std::slice::from_raw_parts(self.first, (self.cstr_with_nul_len - 1) as usize) };
         unsafe { std::str::from_utf8_unchecked(slice) }
     }
@@ -130,6 +140,8 @@ impl AsRef<str> for UStr {
 
 impl AsRef<CStr> for UStr {
     fn as_ref(&self) -> &CStr {
+        // potential access to weak arena
+        // but memory is returned only when the weak reference is dropped, so this is ok
         unsafe { CStr::from_ptr(self.first as *const i8) }
     }
 }

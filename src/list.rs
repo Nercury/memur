@@ -29,6 +29,7 @@ impl<T> PartialSequence<T> {
     }
 }
 
+/// Append-only list
 // don't clone
 pub struct List<T> {
     arena: WeakArena,
@@ -38,12 +39,13 @@ pub struct List<T> {
 }
 
 impl<T> List<T> {
+    /// Initializes a new list in arena and returns a handle to it.
     pub fn new(arena: &Arena) -> List<T> {
         unsafe {
             let starting_sequence = arena.upload_auto_drop(PartialSequence::empty());
 
             List {
-                arena: arena.weak(),
+                arena: arena.to_weak_arena(),
                 _len: 0,
                 _first: starting_sequence,
                 _last: starting_sequence,
@@ -51,13 +53,14 @@ impl<T> List<T> {
         }
     }
 
-    pub fn iter(&mut self) -> impl Iterator<Item=&T> {
+    /// Iterates over the item references in arena if the arena is alive.
+    pub fn iter(&mut self) -> Option<impl Iterator<Item=&T>> {
         struct State<T> {
             current: *mut PartialSequence<T>,
             index: usize,
         }
 
-        (0..self._len)
+        Some((0..self._len)
             .scan(State { current: self._first, index: 0 }, |state, _| {
                 if state.index >= MAX_ITEMS {
                     (*state).current = unsafe { (*(*state).current).next_list };
@@ -68,16 +71,17 @@ impl<T> List<T> {
                 debug_assert_ne!(item, null_mut(), "item != null");
                 state.index += 1;
                 Some(unsafe { std::mem::transmute::<*mut T, &T>(item) })
-            })
+            }))
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item=&mut T> {
+    /// Iterates over the mutable item references in arena if the arena is alive.
+    pub fn iter_mut(&mut self) -> Option<impl Iterator<Item=&mut T>> {
         struct State<T> {
             current: *mut PartialSequence<T>,
             index: usize,
         }
 
-        (0..self._len)
+        Some((0..self._len)
             .scan(State { current: self._first, index: 0 }, |state, _| {
                 if state.index >= MAX_ITEMS {
                     (*state).current = unsafe { (*(*state).current).next_list };
@@ -88,24 +92,31 @@ impl<T> List<T> {
                 debug_assert_ne!(item, null_mut(), "item != null");
                 state.index += 1;
                 Some(unsafe { std::mem::transmute::<*mut T, &mut T>(item) })
-            })
+            }))
     }
 
-    pub fn push(&mut self, item: T) {
-        unsafe {
-            if let Some(empty_slot) = (*self._last).take_empty_slot() {
-                let item_ptr = self.arena.upload_auto_drop(item);
-                *empty_slot = item_ptr;
-            } else {
-                let next_sequence = self.arena.upload_auto_drop(PartialSequence::empty());
-                (*self._last).next_list = next_sequence;
-                self._last = next_sequence;
-                let item_ptr = self.arena.upload_auto_drop(item);
-                let empty_slot = (*self._last).take_empty_slot().unwrap();
-                *empty_slot = item_ptr;
-            }
+    /// Appends a new item to list if the arena is alive.
+    pub fn push(&mut self, item: T) -> Option<()> {
+        match self.arena.arena() {
+            None => None,
+            Some(arena) => {
+                unsafe {
+                    if let Some(empty_slot) = (*self._last).take_empty_slot() {
+                        let item_ptr = arena.upload_auto_drop(item);
+                        *empty_slot = item_ptr;
+                    } else {
+                        let next_sequence = arena.upload_auto_drop(PartialSequence::empty());
+                        (*self._last).next_list = next_sequence;
+                        self._last = next_sequence;
+                        let item_ptr = arena.upload_auto_drop(item);
+                        let empty_slot = (*self._last).take_empty_slot().unwrap();
+                        *empty_slot = item_ptr;
+                    }
+                }
+                self._len += 1;
+                Some(())
+            },
         }
-        self._len += 1;
     }
 }
 
@@ -136,7 +147,7 @@ mod list_tests {
             list.push(Compact { value: 3 });
             list.push(Compact { value: 4 });
             list.push(Compact { value: 5 });
-            for (i, item) in (1..=5).zip(list.iter_mut()) {
+            for (i, item) in (1..=5).zip(list.iter_mut().unwrap()) {
                 assert_eq!(i, item.value);
             }
         };
@@ -151,7 +162,7 @@ mod list_tests {
             for i in 0..super::MAX_ITEMS * 3 {
                 list.push(Compact { value: i });
             }
-            for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.iter_mut()) {
+            for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.iter_mut().unwrap()) {
                 assert_eq!(i, item.value);
             }
         };

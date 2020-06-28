@@ -107,44 +107,10 @@ pub unsafe fn drop<T: Sized>(bytes: *const u8) {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-    use std::cell::RefCell;
     use crate::droplist::{DropList, DropListWriteResult};
     use crate::dontdothis;
-
-    type DropFlag<T> = Rc<RefCell<T>>;
-
-    struct Droppable {
-        pub dropflag: DropFlag<bool>,
-    }
-
-    impl Drop for Droppable {
-        fn drop(&mut self) {
-            *self.dropflag.borrow_mut() = true;
-        }
-    }
-
-    #[test]
-    fn dropflag() {
-        let flag = DropFlag::new(RefCell::new(false));
-        let droppable = Droppable { dropflag: flag.clone() };
-        assert_eq!(false, *flag.borrow());
-        std::mem::drop(droppable);
-        assert_eq!(true, *flag.borrow());
-    }
-
-    struct DropableWithData {
-        pub data: i32,
-        pub dropflag: DropFlag<i32>,
-    }
-
-    impl Drop for DropableWithData {
-        fn drop(&mut self) {
-            let ret = self.data;
-            self.data += 1;
-            *self.dropflag.borrow_mut() = ret;
-        }
-    }
+    use crate::dropflag::{DropFlag, DropableWithData};
+    use std::cell::RefCell;
 
     #[test]
     fn droplist() {
