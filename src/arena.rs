@@ -17,8 +17,10 @@ pub enum UploadError {
 
     /// Item does not fit in a block.
     ///
-    /// When there is not enough space in a block, another block is allocated. This error occurs only
-    /// if item is bigger than the maximum possible free space in a block.
+    /// If there is not enough space in a block, then another block is allocated. This error occurs only
+    /// if the item is bigger than the maximum possible free space in a block.
+    ///
+    /// Solution: handle this error and do not store items that are too big or increase block size.
     ItemDoesNotFit,
 
     /// Metadata does not fit in a block.
@@ -27,12 +29,16 @@ pub enum UploadError {
     /// droplists, memory block (yeah a bit circular here), weak and total reference counts.
     /// This error occurs when this metadata does not fit in a block, and should happen on `Arena`
     /// initialization only.
+    ///
+    /// Solution: increase block size.
     MetadataDoesNotFit,
 
     /// Arena was dropped.
     ///
     /// The main `Arena` is dropped and the drop function may have been executed for any containing item.
     /// This action is not available.
+    ///
+    /// Solution: ensure arena objects are not accessed after the arena is dropped and handle this error.
     ArenaIsNotAlive,
 }
 
@@ -217,7 +223,7 @@ pub struct WeakArena {
 
 /// `Arena` is a memory block container that executes `drop` for your objects when it goes out of scope.
 ///
-/// It can not be used between threads. Create a separate `WeakArena` for each thread.
+/// It can not be used between threads. Create a separate `Arena` for each thread.
 ///
 /// You can use this `Arena` to upload data to memory and receive a pointer to this data.
 /// Behind the scenes, the `Arena` will bump the pointer inside the current block, copy
