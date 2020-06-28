@@ -1,4 +1,4 @@
-use crate::{Arena};
+use crate::{Arena, WeakArena};
 use std::ptr::null_mut;
 
 const MAX_ITEMS: usize = 32;
@@ -29,8 +29,9 @@ impl<T> PartialSequence<T> {
     }
 }
 
+// don't clone
 pub struct List<T> {
-    arena: Arena,
+    arena: WeakArena,
     _len: u32,
     _first: *mut PartialSequence<T>,
     _last: *mut PartialSequence<T>,
@@ -42,7 +43,7 @@ impl<T> List<T> {
             let starting_sequence = arena.upload_auto_drop(PartialSequence::empty());
 
             List {
-                arena: arena.clone(),
+                arena: arena.weak(),
                 _len: 0,
                 _first: starting_sequence,
                 _last: starting_sequence,
@@ -110,7 +111,7 @@ impl<T> List<T> {
 
 #[cfg(test)]
 mod list_tests {
-    use crate::{ArenaMemory, Arena};
+    use crate::{Memory, Arena};
     use crate::List;
     use std::fmt::Debug;
 
@@ -127,7 +128,7 @@ mod list_tests {
     #[test]
     fn simple_test() {
         let _obj = {
-            let mem = ArenaMemory::new();
+            let mem = Memory::new();
             let arena = Arena::new(&mem);
             let mut list = List::new(&arena);
             list.push(Compact { value: 1 });
@@ -144,7 +145,7 @@ mod list_tests {
     #[test]
     fn many_items_test() {
         let _obj = {
-            let mem = ArenaMemory::new();
+            let mem = Memory::new();
             let arena = Arena::new(&mem);
             let mut list = List::new(&arena);
             for i in 0..super::MAX_ITEMS * 3 {

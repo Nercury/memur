@@ -1,4 +1,4 @@
-use crate::Arena;
+use crate::{Arena, WeakArena};
 use std::ffi::{CStr, CString};
 use std::str::Utf8Error;
 use std::fmt::{Display, Debug};
@@ -22,8 +22,9 @@ impl Display for UStrError {
 
 const MAX_USTR: usize = u16::MAX as usize - 1;
 
+#[derive(Clone)]
 pub struct UStr {
-    _arena: Arena,
+    _arena: WeakArena,
     cstr_with_nul_len: u16,
     first: *mut u8,
 }
@@ -113,7 +114,7 @@ impl UStr {
         let cstr_with_nul_len = bytes.len() + 1;
         let ptr = arena.upload_no_drop_bytes(cstr_with_nul_len, bytes.iter().map(|v| *v).chain(std::iter::once(0u8)));
         UStr {
-            _arena: arena.clone(),
+            _arena: arena.weak(),
             cstr_with_nul_len: cstr_with_nul_len as u16,
             first: ptr,
         }
@@ -135,13 +136,13 @@ impl AsRef<CStr> for UStr {
 
 #[cfg(test)]
 mod ustr_tests {
-    use crate::{ArenaMemory, Arena};
+    use crate::{Memory, Arena};
     use crate::UStr;
     use std::ffi::CString;
 
     #[test]
     fn test_str() {
-        let memory = ArenaMemory::new();
+        let memory = Memory::new();
         let arena = Arena::new(&memory);
         let str = UStr::from_str(&arena, "hello world!").expect("failed to create");
         assert_eq!("hello world!", &str);
@@ -150,7 +151,7 @@ mod ustr_tests {
 
     #[test]
     fn test_str_with_nul() {
-        let memory = ArenaMemory::new();
+        let memory = Memory::new();
         let arena = Arena::new(&memory);
         assert_eq!(None, UStr::from_str(&arena, "hello\0world!").ok());
     }

@@ -8,6 +8,7 @@ mod ustr;
 
 pub use list::List;
 pub use ustr::UStr;
+use std::ptr::null_mut;
 
 struct ArenaMemoryInstance {
     free_blocks: VecDeque<Box<[u8]>>,
@@ -70,13 +71,13 @@ impl ArenaMemoryInstance {
 }
 
 #[derive(Clone)]
-pub struct ArenaMemory {
+pub struct Memory {
     shared: std::sync::Arc<std::sync::Mutex<ArenaMemoryInstance>>,
 }
 
-impl ArenaMemory {
-    pub fn new() -> ArenaMemory {
-        ArenaMemory {
+impl Memory {
+    pub fn new() -> Memory {
+        Memory {
             shared: std::sync::Arc::new(std::sync::Mutex::new(ArenaMemoryInstance::new()))
         }
     }
@@ -220,27 +221,46 @@ impl Block {
     }
 }
 
-struct ArenaInstance {
-    memory: ArenaMemory,
+struct ArenaMetadata {
+    memory: Memory,
     last_block: Option<Block>,
     first_drop_list: *mut DropList,
     last_drop_list: *mut DropList,
+    strong_rc: i64,
+    rc: i64,
 }
 
-impl ArenaInstance {
-    pub fn new(mut memory: ArenaMemory) -> ArenaInstance {
-        let mut block = Block::new(memory.take_block());
-        let drop_list = unsafe { block.push(DropList::empty()) }.expect("first droplist fits");
+impl ArenaMetadata {
+    #[inline(always)]
+    pub fn inc_rc(&mut self) {
+        self.strong_rc += 1;
+        self.rc += 1;
+        println!("inc_rc s {} t {}", self.strong_rc, self.rc);
+    }
 
-        ArenaInstance {
-            memory,
-            last_block: Some(block),
-            first_drop_list: drop_list,
-            last_drop_list: drop_list,
-        }
+    #[inline(always)]
+    pub fn dec_rc(&mut self) {
+        self.strong_rc -= 1;
+        self.rc -= 1;
+        println!("dec_rc s {} t {}", self.strong_rc, self.rc);
+    }
+
+    #[inline(always)]
+    pub fn inc_weak(&mut self) {
+        self.rc += 1;
+        println!("inc_wk s {} t {}", self.strong_rc, self.rc);
+    }
+
+    #[inline(always)]
+    pub fn dec_weak(&mut self) {
+        self.rc -= 1;
+        println!("dec_wk s {} t {}", self.strong_rc, self.rc);
     }
 
     unsafe fn push_drop_fn<T>(&mut self, data: *const u8) {
+        debug_assert_ne!(null_mut(), self.first_drop_list, "push: drop list not null (1)");
+        debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (2)");
+
         match (*self.last_drop_list).push_drop_fn::<T>(data) {
             DropListWriteResult::ListFull => {
                 let next_drop_list = self.upload_no_drop(DropList::empty());
@@ -310,73 +330,178 @@ impl ArenaInstance {
         unreachable!("upload_no_drop_bytes failed after acquiring next block")
     }
 
-    // unsafe fn next_block(&mut self) -> &mut Block {
-    //     let mut block = Some(Block::new(self.memory.take_block()));
-    //     std::mem::swap(&mut block, &mut self.last_block);
-    //     let last_block = self.last_block.as_mut().unwrap();
-    //     last_block.set_previous_block(block.unwrap());
-    //     last_block
-    // }
-}
+    pub unsafe fn drop_objects(&mut self) {
+        debug_assert_ne!(null_mut(), self.first_drop_list, "drop_objects: drop list not null");
+        (*self.first_drop_list).execute_drop_chain();
+        self.first_drop_list = null_mut();
+        self.last_drop_list = null_mut();
+    }
 
-impl Drop for ArenaInstance {
-    fn drop(&mut self) {
-        // drop items
-
-        unsafe { (*self.first_drop_list).execute_drop_chain(); }
-
-        // return data from blocks back to memory pool
-
+    /// After the call to this function metadata must not be used
+    pub unsafe fn reclaim_memory(&mut self) -> ArenaMetadata {
         let mut block = None;
         std::mem::swap(&mut block, &mut self.last_block);
         while block.is_some() {
-            let (previous_block, data) = unsafe { block.unwrap().into_previous_block_and_data() };
+            let (previous_block, data) = block.unwrap().into_previous_block_and_data();
             self.memory.return_block(data);
             block = previous_block;
         }
+
+        std::mem::transmute_copy::<ArenaMetadata, ArenaMetadata>(&*self)
     }
 }
 
-#[derive(Clone)]
+pub struct WeakArena {
+    metadata: *mut ArenaMetadata,
+}
+
 pub struct Arena {
-    shared: std::rc::Rc<std::cell::RefCell<ArenaInstance>>,
+    metadata: *mut ArenaMetadata,
 }
 
 impl Arena {
-    pub fn new(memory: &ArenaMemory) -> Arena {
+    pub fn new(memory: &Memory) -> Arena {
+        let mut memory = memory.clone();
+        let mut block = Block::new(memory.take_block());
+        let drop_list = unsafe { block.push(DropList::empty()) }.expect("first droplist fits");
+        let metadata = unsafe { block.push(ArenaMetadata {
+            memory,
+            last_block: None,
+            first_drop_list: drop_list,
+            last_drop_list: drop_list,
+            strong_rc: 1,
+            rc: 1
+        }) }.expect("arena metadata fits");
+        unsafe { (*metadata).last_block = Some(block) };
+
         Arena {
-            shared: std::rc::Rc::new(std::cell::RefCell::new(ArenaInstance::new(memory.clone())))
+            metadata,
         }
     }
 
+    pub fn weak(&self) -> WeakArena {
+        println!("split weak arena");
+        unsafe { self.md().inc_weak() };
+        WeakArena {
+            metadata: self.metadata,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn md(&self) -> &mut ArenaMetadata {
+        std::mem::transmute::<*mut ArenaMetadata, &mut ArenaMetadata>(self.metadata)
+    }
+
+    #[inline(always)]
     pub unsafe fn upload_auto_drop<T>(&self, value: T) -> *mut T {
-        std::cell::RefCell::borrow_mut(&self.shared).upload_auto_drop(value)
+        self.md().upload_auto_drop::<T>(value)
     }
 
+    #[inline(always)]
     pub unsafe fn upload_no_drop<T>(&self, value: T) -> *mut T {
-        std::cell::RefCell::borrow_mut(&self.shared).upload_no_drop(value)
+        self.md().upload_no_drop::<T>(value)
     }
 
+    #[inline(always)]
     pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
-        std::cell::RefCell::borrow_mut(&self.shared).upload_no_drop_bytes(len, value)
+        self.md().upload_no_drop_bytes(len, value)
     }
 
     pub fn n<T>(&self, value: T) -> N<T> {
         N {
-            _arena: self.clone(),
+            _arena: self.weak(),
             _ptr: unsafe { self.upload_auto_drop(value) },
         }
     }
 }
 
+impl WeakArena {
+    #[inline(always)]
+    unsafe fn md(&self) -> &mut ArenaMetadata {
+        std::mem::transmute::<*mut ArenaMetadata, &mut ArenaMetadata>(self.metadata)
+    }
+
+    #[inline(always)]
+    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> *mut T {
+        self.md().upload_auto_drop::<T>(value)
+    }
+
+    #[inline(always)]
+    pub unsafe fn upload_no_drop<T>(&self, value: T) -> *mut T {
+        self.md().upload_no_drop::<T>(value)
+    }
+
+    #[inline(always)]
+    pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> *mut u8 {
+        self.md().upload_no_drop_bytes(len, value)
+    }
+}
+
+impl Clone for Arena {
+    fn clone(&self) -> Self {
+        println!("clone arena");
+        let metadata = self.metadata;
+        unsafe { (*metadata).inc_rc(); }
+        Arena {
+            metadata,
+        }
+    }
+}
+
+impl Clone for WeakArena {
+    fn clone(&self) -> Self {
+        println!("clone weak");
+        let metadata = self.metadata;
+        unsafe { (*metadata).inc_weak(); }
+        WeakArena {
+            metadata,
+        }
+    }
+}
+
+impl Drop for Arena {
+    fn drop(&mut self) {
+        println!("drop arena");
+
+        let metadata = unsafe { self.md() };
+        (*metadata).dec_rc();
+
+        if (*metadata).strong_rc == 0 {
+            println!("drop arena objects");
+            unsafe { (*metadata).drop_objects() };
+        }
+
+        if (*metadata).rc == 0 {
+            println!("reclaim memory");
+            unsafe { metadata.reclaim_memory() };
+            // this should be the last use of this metadata
+        }
+    }
+}
+
+impl Drop for WeakArena {
+    fn drop(&mut self) {
+        println!("drop weak");
+
+        let metadata = unsafe { self.md() };
+        (*metadata).dec_weak();
+
+        if (*metadata).rc == 0 {
+            println!("reclaim memory");
+            unsafe { metadata.reclaim_memory() };
+            // this should be the last use of this metadata
+        }
+    }
+}
+
 pub struct N<T> {
-    _arena: Arena,
+    _arena: WeakArena,
     _ptr: *mut T,
 }
 
 #[cfg(test)]
 mod arena_tests {
-    use crate::{ArenaMemory, Arena};
+    use crate::{Memory, Arena};
 
     struct Compact {
         value: u8,
@@ -391,7 +516,7 @@ mod arena_tests {
     #[test]
     fn test() {
         let _obj = {
-            let mem = ArenaMemory::new();
+            let mem = Memory::new();
             let arena = Arena::new(&mem);
             arena.n(Compact { value: 5 })
         };
