@@ -1,4 +1,4 @@
-use crate::{Arena, List, UploadError};
+use crate::{Arena, List, UploadError, Array};
 
 /// Implements collect to `Arena` allocated lists.
 pub trait MemurIterator: Iterator {
@@ -8,6 +8,8 @@ pub trait MemurIterator: Iterator {
         where
             Self: Iterator<Item=Result<I, E>>,
             E: From<UploadError>;
+
+    fn collect_array(self, arena: &Arena) -> Result<Array<Self::Item>, UploadError> where Self: ExactSizeIterator;
 }
 
 impl<Q: Iterator> MemurIterator for Q {
@@ -31,5 +33,9 @@ impl<Q: Iterator> MemurIterator for Q {
             list.push(i)?;
         }
         Ok(list)
+    }
+
+    fn collect_array(self, arena: &Arena) -> Result<Array<Self::Item>, UploadError> where Q: ExactSizeIterator {
+        Array::new(arena, self)
     }
 }

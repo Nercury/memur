@@ -204,7 +204,7 @@ impl ArenaMetadata {
         let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<T>();
         let total_array_len = len * offset_between_items;
         if remaining_bytes_for_alignment >= total_array_len as isize {
-            return Ok(last_block.upload_bytes_unchecked_uninit(aligned_start, len) as *mut T);
+            return Ok(last_block.upload_bytes_unchecked_uninit(aligned_start, total_array_len) as *mut T);
         }
 
         if total_array_len > last_block.largest_item_size() {
@@ -218,7 +218,7 @@ impl ArenaMetadata {
 
         let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<T>();
         if remaining_bytes_for_alignment >= total_array_len as isize {
-            return Ok(last_block.upload_bytes_unchecked_uninit(aligned_start, len) as *mut T);
+            return Ok(last_block.upload_bytes_unchecked_uninit(aligned_start, total_array_len) as *mut T);
         }
 
         unreachable!("alloc_no_drop_items_aligned_uninit failed after acquiring the next block")

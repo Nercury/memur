@@ -8,6 +8,7 @@ mod array;
 mod ustr;
 mod n;
 mod traits;
+mod iter;
 
 pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
