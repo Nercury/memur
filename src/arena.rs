@@ -337,7 +337,7 @@ impl Arena {
     ///
     /// The data pointer should point to a memory location inside the arena.
     #[inline(always)]
-    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
+    pub unsafe fn push_custom_drop_fn(&self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
         self.md().push_custom_drop_fn(fun, data)
     }
 
