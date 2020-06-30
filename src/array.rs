@@ -1,6 +1,7 @@
 use crate::{Arena, UploadError, WeakArena};
 use crate::dontdothis::next_item_aligned_start;
 
+/// Continuous memory block containing many elements of the same type.
 pub struct Array<T> where T: Sized {
     _arena: WeakArena,
     _len: usize,

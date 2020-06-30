@@ -55,6 +55,14 @@ impl DropList {
         self.write_item(drop_item)
     }
 
+    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> DropListWriteResult {
+        let drop_item = DropItem {
+            fun,
+            data,
+        };
+        self.write_item(drop_item)
+    }
+
     #[inline(always)]
     pub unsafe fn set_next_list(&mut self, list: *mut DropList) {
         self.next_list = Some(list)
@@ -98,7 +106,10 @@ impl DropItem {
     }
 }
 
-pub type DropFn = unsafe fn(*const u8) -> ();
+/// Function that is intended to drop the values at the specified pointer location.
+///
+/// Drop functions are placed in droplists, and droplists are executed when the arena is dropped.
+pub type DropFn = unsafe fn(data: *const u8) -> ();
 
 #[inline(always)]
 pub unsafe fn drop<T: Sized>(bytes: *const u8) {

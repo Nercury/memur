@@ -1,6 +1,6 @@
 use crate::Memory;
-use crate::droplist::{DropList, DropListWriteResult};
-use std::ptr::null_mut;
+use crate::droplist::{DropList, DropListWriteResult, DropFn};
+use std::ptr::{null_mut, null};
 use crate::block::{Block, PlacementError};
 use std::fmt::Debug;
 
@@ -53,9 +53,7 @@ impl std::fmt::Display for UploadError {
     }
 }
 
-impl std::error::Error for UploadError {
-
-}
+impl std::error::Error for UploadError {}
 
 /// Information about arena injected in first allocated arena memory block.
 struct ArenaMetadata {
@@ -99,16 +97,30 @@ impl ArenaMetadata {
         debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (2)");
 
         Ok(match (*self.last_drop_list).push_drop_fn::<T>(data) {
-            DropListWriteResult::ListFull => {
-                let next_drop_list = match self.upload_no_drop(DropList::empty()) {
-                    Ok(v) => v,
-                    Err(_) => return Err(UploadError::DropListDoesNotFit),
-                };
-                (*self.last_drop_list).set_next_list(next_drop_list);
-                self.last_drop_list = next_drop_list;
-            },
+            DropListWriteResult::ListFull => self.push_next_drop_list()?,
             DropListWriteResult::ListNotFull => (),
         })
+    }
+
+    unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
+        debug_assert_ne!(null_mut(), self.first_drop_list, "push: drop list not null (3)");
+        debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (4)");
+
+        Ok(match (*self.last_drop_list).push_custom_drop_fn(fun, data) {
+            DropListWriteResult::ListFull => self.push_next_drop_list()?,
+            DropListWriteResult::ListNotFull => (),
+        })
+    }
+
+    unsafe fn push_next_drop_list(&mut self) -> Result<(), UploadError> {
+        let next_drop_list = match self.upload_no_drop(DropList::empty()) {
+            Ok(v) => v,
+            Err(_) => return Err(UploadError::DropListDoesNotFit),
+        };
+        debug_assert_ne!(self.last_drop_list, null_mut(), "last drop list not null");
+        (*self.last_drop_list).set_next_list(next_drop_list);
+        self.last_drop_list = next_drop_list;
+        Ok(())
     }
 
     /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
