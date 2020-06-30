@@ -1,6 +1,6 @@
 use crate::{Memory, DropFn};
 use crate::droplist::{DropList, DropListWriteResult};
-use std::ptr::{null_mut, null};
+use std::ptr::{null_mut};
 use crate::block::{Block, PlacementError};
 use std::fmt::Debug;
 
