@@ -23,4 +23,12 @@ impl<K, I: ExactSizeIterator<Item=K>> Iterator for EmptyIfDeadIter<K, I> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.is_alive {
+            self.inner.size_hint()
+        } else {
+            (0, Some(0))
+        }
+    }
 }

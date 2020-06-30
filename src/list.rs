@@ -1,5 +1,5 @@
 use crate::{Arena, WeakArena, UploadError};
-use std::ptr::null_mut;
+use std::ptr::{null_mut};
 
 const MAX_ITEMS: usize = 32;
 
@@ -60,56 +60,66 @@ impl<T> List<T> where T: Sized {
 
     /// Iterates over the item references in arena, returns no items if the arena is dead.
     #[inline(always)]
-    pub fn empty_if_dead_iter(&self) -> impl Iterator<Item=&T> {
-        self.iter().into_iter().flatten()
+    pub fn empty_if_dead_iter(&self) -> impl ExactSizeIterator<Item=&T> {
+        let map = |item| unsafe { std::mem::transmute::<*mut T, &T>(item) };
+        if self.arena.is_alive() {
+            ListIter {
+                len: self._len as usize,
+                index: 0,
+                current: self._first,
+            }.map(map)
+        } else {
+            ListIter {
+                len: 0,
+                index: 0,
+                current: null_mut(),
+            }.map(map)
+        }
     }
 
     /// Iterates over the item references in arena if the arena is alive.
-    pub fn iter(&self) -> Option<impl Iterator<Item=&T>> {
-        struct State<T> {
-            current: *mut PartialSequence<T>,
-            index: usize,
+    pub fn iter(&self) -> Option<impl ExactSizeIterator<Item=&T>> {
+        if self.arena.is_alive() {
+            Some(ListIter {
+                len: self._len as usize,
+                index: 0,
+                current: self._first,
+            }.map(|item| unsafe { std::mem::transmute::<*mut T, &T>(item) }))
+        } else {
+            None
         }
-
-        Some((0..self._len)
-            .scan(State { current: self._first, index: 0 }, |state, _| {
-                if state.index >= MAX_ITEMS {
-                    (*state).current = unsafe { (*(*state).current).next_list };
-                    debug_assert_ne!(state.current, null_mut(), "seq != null");
-                    state.index = 0;
-                }
-                let item = *unsafe { (*(*state).current).items.get_unchecked_mut(state.index) };
-                debug_assert_ne!(item, null_mut(), "item != null");
-                state.index += 1;
-                Some(unsafe { std::mem::transmute::<*mut T, &T>(item) })
-            }))
     }
 
     /// Iterates over the mutable item references in arena, returns no items if the arena is dead.
     #[inline(always)]
-    pub fn empty_if_dead_iter_mut(&mut self) -> impl Iterator<Item=&mut T> {
-        self.iter_mut().into_iter().flatten()
+    pub fn empty_if_dead_iter_mut(&mut self) -> impl ExactSizeIterator<Item=&mut T> {
+        let map = |item| unsafe { std::mem::transmute::<*mut T, &mut T>(item) };
+        if self.arena.is_alive() {
+            ListIter {
+                len: self._len as usize,
+                index: 0,
+                current: self._first,
+            }.map(map)
+        } else {
+            ListIter {
+                len: 0,
+                index: 0,
+                current: null_mut(),
+            }.map(map)
+        }
     }
 
     /// Iterates over the mutable item references in arena if the arena is alive.
-    pub fn iter_mut(&mut self) -> Option<impl Iterator<Item=&mut T>> {
-        struct State<T> {
-            current: *mut PartialSequence<T>,
-            index: usize,
+    pub fn iter_mut(&mut self) -> Option<impl ExactSizeIterator<Item=&mut T>> {
+        if self.arena.is_alive() {
+            Some(ListIter {
+                len: self._len as usize,
+                index: 0,
+                current: self._first,
+            }.map(|item| unsafe { std::mem::transmute::<*mut T, &mut T>(item) }))
+        } else {
+            None
         }
-
-        Some((0..self._len)
-            .scan(State { current: self._first, index: 0 }, |state, _| {
-                if state.index >= MAX_ITEMS {
-                    (*state).current = unsafe { (*(*state).current).next_list };
-                    debug_assert_ne!(state.current, null_mut(), "seq != null");
-                    state.index = 0;
-                }
-                let item = *unsafe { (*(*state).current).items.get_unchecked_mut(state.index) };
-                debug_assert_ne!(item, null_mut(), "item != null");
-                state.index += 1;
-                Some(unsafe { std::mem::transmute::<*mut T, &mut T>(item) })
-            }))
     }
 
     /// Appends a new item to list if the arena is alive.
@@ -145,9 +155,53 @@ impl<T> std::fmt::Debug for List<T> where T: std::fmt::Debug, T: Sized {
     }
 }
 
+struct ListIter<K> {
+    current: *mut PartialSequence<K>,
+    index: usize,
+    len: usize,
+}
+
+impl<K> ExactSizeIterator for ListIter<K> {
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<K> Iterator for ListIter<K> {
+    type Item = *mut K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe {
+            if self.current == null_mut() {
+                return None;
+            }
+            if self.index >= MAX_ITEMS {
+                if (*self.current).next_list == null_mut() {
+                    self.current = null_mut();
+                    return None;
+                }
+                self.current = (*self.current).next_list;
+                self.index = 0;
+            }
+            let item = (*self.current).items.get_unchecked(self.index);
+            if *item == null_mut() {
+                self.current = null_mut();
+                None
+            } else {
+                self.index += 1;
+                Some(*item)
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
 #[cfg(test)]
 mod list_tests {
-    use crate::{Memory, Arena};
+    use crate::{Memory, Arena, MemurIterator};
     use crate::List;
     use std::fmt::Debug;
 
@@ -197,5 +251,27 @@ mod list_tests {
                 assert_eq!(i, item.value);
             }
         };
+    }
+
+    #[test]
+    fn test_collect() {
+        let memory = Memory::new();
+        let arena = Arena::new(&memory).unwrap();
+
+        let items3 = (0..12)
+            .map(|v| v as i16)
+            .collect_list(&arena).unwrap()
+            .empty_if_dead_iter()
+            .map(|i: &i16| *i)
+            .collect_list(&arena)
+            .unwrap()
+            .iter().unwrap()
+            .map(|i: &i16| *i)
+            .collect_list(&arena)
+            .unwrap();
+
+        for (i, (item, expected)) in items3.empty_if_dead_iter().zip((0..12).map(|v| v as i16)).enumerate() {
+            assert_eq!(*item, expected, "at index {}", i);
+        }
     }
 }
