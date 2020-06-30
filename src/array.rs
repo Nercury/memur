@@ -55,17 +55,27 @@ impl<T> Array<T> where T: Sized {
 
             arena.push_custom_drop_fn(drop_array::<T>, metadata as *const u8)?;
 
+            // Prepare a memory block in arena, that is correctly aligned for the type T,
+            // the item size also needs to be such that pointers to items are valid.
             let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(len, Self::aligned_item_size())? as *mut u8;
             (*metadata)._data = ptr as *mut T;
 
+            // Consume items in iterator
             for (index, item) in iter.enumerate() {
+                // Convert pointer to item into pointer to first item byte
                 let item_ptr = std::mem::transmute::<&T, *const u8>(&item);
+                // Get a pointer to nth element inside arena
                 let arena_item_start_ptr = ptr.offset((index * Self::aligned_item_size()) as isize);
+                // Convert source and target byte pointers to slices, they are easier to work with
+                // than raw pointers
                 let item_as_bytes = std::slice::from_raw_parts(item_ptr, std::mem::size_of::<T>());
                 let arena_location_bytes = std::slice::from_raw_parts_mut(arena_item_start_ptr, std::mem::size_of::<T>());
+                // Copy bytes
                 for (inb, outb) in item_as_bytes.iter().zip(arena_location_bytes.iter_mut()) {
                     *outb = *inb;
                 }
+                // Forget the item, no more pointers are pointing to it.
+                // The item will be restored back from bytes and dropped together with arena later.
                 std::mem::forget(item);
             }
 
