@@ -1,5 +1,5 @@
-use crate::Memory;
-use crate::droplist::{DropList, DropListWriteResult, DropFn};
+use crate::{Memory, DropFn};
+use crate::droplist::{DropList, DropListWriteResult};
 use std::ptr::{null_mut, null};
 use crate::block::{Block, PlacementError};
 use std::fmt::Debug;
@@ -102,7 +102,7 @@ impl ArenaMetadata {
         })
     }
 
-    unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
+    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
         debug_assert_ne!(null_mut(), self.first_drop_list, "push: drop list not null (3)");
         debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (4)");
 
@@ -331,6 +331,14 @@ impl Arena {
     #[inline(always)]
     pub unsafe fn alloc_no_drop_items_aligned_uninit<T>(&self, len: usize, offset_between_items: usize) -> Result<*mut T, UploadError> {
         self.md().alloc_no_drop_items_aligned_uninit::<T>(len, offset_between_items)
+    }
+
+    /// Place custom drop function that will be executed on arena drop.
+    ///
+    /// The data pointer should point to a memory location inside the arena.
+    #[inline(always)]
+    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
+        self.md().push_custom_drop_fn(fun, data)
     }
 
     /// Clone as `WeakArena`.
