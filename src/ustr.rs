@@ -43,7 +43,7 @@ const MAX_USTR: usize = u16::MAX as usize - 1;
 #[derive(Clone)]
 pub struct UStr {
     _arena: WeakArena,
-    cstr_with_nul_len: u16,
+    byte_count_without_nul: u16,
     first: *mut u8,
 }
 
@@ -137,10 +137,13 @@ impl UStr {
     unsafe fn from_str_unchecked(arena: &Arena, value: &str) -> Result<UStr, UploadError> {
         let bytes = value.as_bytes();
         let cstr_with_nul_len = bytes.len() + 1;
-        let ptr = arena.upload_no_drop_bytes(cstr_with_nul_len, bytes.iter().map(|v| *v).chain(std::iter::once(0u8)))?;
+        let ptr = arena.upload_no_drop_bytes(cstr_with_nul_len, bytes
+            .iter()
+            .map(|v| *v)
+            .chain(std::iter::once(0u8)))?;
         Ok(UStr {
             _arena: arena.to_weak_arena(),
-            cstr_with_nul_len: cstr_with_nul_len as u16,
+            byte_count_without_nul: bytes.len() as u16,
             first: ptr,
         })
     }
@@ -155,7 +158,7 @@ impl AsRef<str> for UStr {
     fn as_ref(&self) -> &str {
         // potential access to weak arena
         // but memory is returned only when the weak reference is dropped, so this is ok
-        let slice = unsafe { std::slice::from_raw_parts(self.first, (self.cstr_with_nul_len - 1) as usize) };
+        let slice = unsafe { std::slice::from_raw_parts(self.first, self.byte_count_without_nul as usize) };
         unsafe { std::str::from_utf8_unchecked(slice) }
     }
 }

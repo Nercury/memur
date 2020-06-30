@@ -15,13 +15,10 @@ impl<T> Array<T> where T: Sized {
     pub fn new(arena: &Arena, iter: impl ExactSizeIterator<Item=T>) -> Result<Array<T>, UploadError> {
         unsafe {
             let len = iter.len();
-            let aligned_item_size = Self::aligned_item_size();
-            println!("aligned item size init: {}", aligned_item_size);
-
-            let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(len, aligned_item_size)? as *mut u8;
+            let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(len, Self::aligned_item_size())? as *mut u8;
             for (index, item) in iter.enumerate() {
                 let item_ptr = std::mem::transmute::<&T, *const u8>(&item);
-                let arena_item_start_ptr = ptr.offset((index * aligned_item_size) as isize);
+                let arena_item_start_ptr = ptr.offset((index * Self::aligned_item_size()) as isize);
                 let item_as_bytes = std::slice::from_raw_parts(item_ptr, std::mem::size_of::<T>());
                 let arena_location_bytes = std::slice::from_raw_parts_mut(arena_item_start_ptr, std::mem::size_of::<T>());
                 for (inb, outb) in item_as_bytes.iter().zip(arena_location_bytes.iter_mut()) {
@@ -39,7 +36,6 @@ impl<T> Array<T> where T: Sized {
     }
 
     pub fn iter(&self) -> impl Iterator<Item=&T> {
-        println!("aligned item size iter: {}", Self::aligned_item_size());
         let byte_ptr = self._ptr as *const u8;
         unsafe {
             (0..self._len)
