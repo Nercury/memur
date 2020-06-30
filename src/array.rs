@@ -85,7 +85,7 @@ impl<T> Array<T> where T: Sized {
     }
 
     /// Iterates over the item references in arena if the arena is alive.
-    pub fn iter(&self) -> Option<impl ExactSizeIterator<Item=&T>> {
+    pub fn safer_iter(&self) -> Option<impl ExactSizeIterator<Item=&T>> {
         if self._arena.is_alive() {
             Some(unsafe {
                 Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len, (*self._metadata)._offset)
@@ -97,7 +97,7 @@ impl<T> Array<T> where T: Sized {
     }
 
     /// Iterates over the item references in arena, returns no items if the arena is dead.
-    pub fn empty_if_dead_iter(&self) -> impl ExactSizeIterator<Item=&T> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item=&T> {
         EmptyIfDeadIter {
             is_alive: self._arena.is_alive(),
             inner: unsafe {
@@ -108,7 +108,7 @@ impl<T> Array<T> where T: Sized {
     }
 
     /// Iterates over the mutable item references in arena if the arena is alive.
-    pub fn iter_mut(&self) -> Option<impl ExactSizeIterator<Item=&mut T>> {
+    pub fn safer_iter_mut(&self) -> Option<impl ExactSizeIterator<Item=&mut T>> {
         if self._arena.is_alive() {
             Some(unsafe {
                 Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len, (*self._metadata)._offset)
@@ -120,7 +120,7 @@ impl<T> Array<T> where T: Sized {
     }
 
     /// Iterates over the mutable item references in arena, returns no items if the arena is dead.
-    pub fn empty_if_dead_iter_mut(&mut self) -> impl ExactSizeIterator<Item=&mut T> {
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item=&mut T> {
         EmptyIfDeadIter {
             is_alive: self._arena.is_alive(),
             inner: unsafe {
@@ -140,7 +140,7 @@ mod array {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
         let items = Array::new(&arena, (0..12).map(|v| v as i64)).unwrap();
-        for (i, (item, expected)) in items.empty_if_dead_iter().zip((0..12).map(|v| v as i64)).enumerate() {
+        for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i64)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
     }
@@ -150,7 +150,7 @@ mod array {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
         let items = Array::new(&arena, (0..12).map(|v| v as i8)).unwrap();
-        for (i, (item, expected)) in items.empty_if_dead_iter().zip((0..12).map(|v| v as i8)).enumerate() {
+        for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i8)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
     }
@@ -160,7 +160,7 @@ mod array {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
         let items = Array::new(&arena, (0..12).map(|v| v as i16)).unwrap();
-        for (i, (item, expected)) in items.empty_if_dead_iter().zip((0..12).map(|v| v as i16)).enumerate() {
+        for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i16)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
     }
@@ -176,16 +176,16 @@ mod array {
                 .map(|v| v as i16)
         )
             .unwrap()
-            .empty_if_dead_iter()
+            .iter()
             .map(|i: &i16| *i)
             .collect_array(&arena)
             .unwrap()
-            .iter().unwrap()
+            .safer_iter().unwrap()
             .map(|i: &i16| *i)
             .collect_array(&arena)
             .unwrap();
 
-        for (i, (item, expected)) in items3.empty_if_dead_iter().zip((0..12).map(|v| v as i16)).enumerate() {
+        for (i, (item, expected)) in items3.iter().zip((0..12).map(|v| v as i16)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
     }
@@ -196,14 +196,14 @@ mod array {
         let items: Array<i16> = {
             let arena = Arena::new(&memory).unwrap();
             let items = Array::new(&arena, (0..12).map(|v| v as i16)).unwrap();
-            for (i, (item, expected)) in items.empty_if_dead_iter().zip((0..12).map(|v| v as i16)).enumerate() {
+            for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i16)).enumerate() {
                 assert_eq!(*item, expected, "at index {}", i);
             }
             assert_eq!(12, items.len().unwrap());
             items
         };
 
-        let sum = items.empty_if_dead_iter().fold(0, |acc, _| acc + 1);
+        let sum = items.iter().fold(0, |acc, _| acc + 1);
         assert_eq!(0, sum);
         assert_eq!(None, items.len());
     }

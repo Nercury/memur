@@ -60,7 +60,7 @@ impl<T> List<T> where T: Sized {
 
     /// Iterates over the item references in arena, returns no items if the arena is dead.
     #[inline(always)]
-    pub fn empty_if_dead_iter(&self) -> impl ExactSizeIterator<Item=&T> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item=&T> {
         let map = |item| unsafe { std::mem::transmute::<*mut T, &T>(item) };
         if self.arena.is_alive() {
             ListIter {
@@ -78,7 +78,7 @@ impl<T> List<T> where T: Sized {
     }
 
     /// Iterates over the item references in arena if the arena is alive.
-    pub fn iter(&self) -> Option<impl ExactSizeIterator<Item=&T>> {
+    pub fn safer_iter(&self) -> Option<impl ExactSizeIterator<Item=&T>> {
         if self.arena.is_alive() {
             Some(ListIter {
                 len: self._len as usize,
@@ -92,7 +92,7 @@ impl<T> List<T> where T: Sized {
 
     /// Iterates over the mutable item references in arena, returns no items if the arena is dead.
     #[inline(always)]
-    pub fn empty_if_dead_iter_mut(&mut self) -> impl ExactSizeIterator<Item=&mut T> {
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item=&mut T> {
         let map = |item| unsafe { std::mem::transmute::<*mut T, &mut T>(item) };
         if self.arena.is_alive() {
             ListIter {
@@ -110,7 +110,7 @@ impl<T> List<T> where T: Sized {
     }
 
     /// Iterates over the mutable item references in arena if the arena is alive.
-    pub fn iter_mut(&mut self) -> Option<impl ExactSizeIterator<Item=&mut T>> {
+    pub fn safer_iter_mut(&mut self) -> Option<impl ExactSizeIterator<Item=&mut T>> {
         if self.arena.is_alive() {
             Some(ListIter {
                 len: self._len as usize,
@@ -148,7 +148,7 @@ impl<T> List<T> where T: Sized {
 impl<T> std::fmt::Debug for List<T> where T: std::fmt::Debug, T: Sized {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut list = f.debug_list();
-        for i in self.empty_if_dead_iter() {
+        for i in self.iter() {
             list.entry(i);
         }
         list.finish()
@@ -232,7 +232,7 @@ mod list_tests {
             assert_eq!(4, list.len());
             list.push(Compact { value: 5 }).unwrap();
             assert_eq!(5, list.len());
-            for (i, item) in (1..=5).zip(list.empty_if_dead_iter()) {
+            for (i, item) in (1..=5).zip(list.iter()) {
                 assert_eq!(i, item.value);
             }
         };
@@ -247,7 +247,7 @@ mod list_tests {
             for i in 0..super::MAX_ITEMS * 3 {
                 list.push(Compact { value: i }).unwrap();
             }
-            for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.empty_if_dead_iter_mut()) {
+            for (i, item) in (0..super::MAX_ITEMS * 3).zip(list.iter_mut()) {
                 assert_eq!(i, item.value);
             }
         };
@@ -261,16 +261,16 @@ mod list_tests {
         let items3 = (0..12)
             .map(|v| v as i16)
             .collect_list(&arena).unwrap()
-            .empty_if_dead_iter()
+            .iter()
             .map(|i: &i16| *i)
             .collect_list(&arena)
             .unwrap()
-            .iter().unwrap()
+            .safer_iter().unwrap()
             .map(|i: &i16| *i)
             .collect_list(&arena)
             .unwrap();
 
-        for (i, (item, expected)) in items3.empty_if_dead_iter().zip((0..12).map(|v| v as i16)).enumerate() {
+        for (i, (item, expected)) in items3.iter().zip((0..12).map(|v| v as i16)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
     }
