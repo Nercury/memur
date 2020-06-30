@@ -1,4 +1,5 @@
 use crate::{Arena, UploadError, WeakArena};
+use crate::dontdothis::next_item_aligned_start;
 
 pub struct Array<T> where T: Sized {
     _arena: WeakArena,
@@ -7,20 +8,28 @@ pub struct Array<T> where T: Sized {
 }
 
 impl<T> Array<T> where T: Sized {
+    const fn aligned_item_size() -> usize {
+        next_item_aligned_start::<T>(std::mem::size_of::<T>())
+    }
+
     pub fn new(arena: &Arena, iter: impl ExactSizeIterator<Item=T>) -> Result<Array<T>, UploadError> {
         unsafe {
             let len = iter.len();
-            let total_bytes_len = std::mem::size_of::<T>() * len;
-            let ptr = arena.upload_no_drop_bytes(
-                total_bytes_len,
-                iter.flat_map(|i| {
-                    let ptr_to_forgotten_value = std::mem::transmute::<&T, *const u8>(&i);
-                    std::mem::forget(i);
-                    let magic_slice: &'static [u8] = std::slice::from_raw_parts(
-                        ptr_to_forgotten_value, std::mem::size_of::<T>());
-                    magic_slice.iter().map(|b| *b)
-                })
-            )?;
+            let aligned_item_size = Self::aligned_item_size();
+            println!("aligned item size init: {}", aligned_item_size);
+
+            let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(len, aligned_item_size)? as *mut u8;
+            for (index, item) in iter.enumerate() {
+                let item_ptr = std::mem::transmute::<&T, *const u8>(&item);
+                let arena_item_start_ptr = ptr.offset((index * aligned_item_size) as isize);
+                let item_as_bytes = std::slice::from_raw_parts(item_ptr, std::mem::size_of::<T>());
+                let arena_location_bytes = std::slice::from_raw_parts_mut(arena_item_start_ptr, std::mem::size_of::<T>());
+                for (inb, outb) in item_as_bytes.iter().zip(arena_location_bytes.iter_mut()) {
+                    *outb = *inb;
+                }
+                std::mem::forget(item);
+            }
+
             Ok(Array {
                 _arena: arena.to_weak_arena(),
                 _len: len,
@@ -30,11 +39,26 @@ impl<T> Array<T> where T: Sized {
     }
 
     pub fn iter(&self) -> impl Iterator<Item=&T> {
-        unsafe { std::slice::from_raw_parts(self._ptr as *const T, self._len) }.iter()
+        println!("aligned item size iter: {}", Self::aligned_item_size());
+        let byte_ptr = self._ptr as *const u8;
+        unsafe {
+            (0..self._len)
+                .map(move |i| {
+                    let offset = Self::aligned_item_size() * i;
+                    std::mem::transmute::<*const T, &T>(byte_ptr.offset(offset as isize) as *const T)
+                })
+        }
     }
 
     pub fn iter_mut(&self) -> impl Iterator<Item=&mut T> {
-        unsafe { std::slice::from_raw_parts_mut(self._ptr, self._len) }.iter_mut()
+        let byte_ptr = self._ptr as *mut u8;
+        unsafe {
+            (0..self._len)
+                .map(move |i| {
+                    let offset = Self::aligned_item_size() * i;
+                    std::mem::transmute::<*mut T, &mut T>(byte_ptr.offset(offset as isize) as *mut T)
+                })
+        }
     }
 }
 
@@ -43,6 +67,41 @@ impl<T> Drop for Array<T> where T: Sized {
         for item in self.iter() {
             let _oh_look_it_teleported_here: T = unsafe { std::mem::transmute_copy::<T, T>(item) };
             // and it's dropped
+        }
+    }
+}
+
+#[cfg(test)]
+mod array {
+    use crate::{Memory, Arena, Array};
+
+    #[test]
+    fn has_items_when_iterating() {
+        let memory = Memory::new();
+        let arena = Arena::new(&memory).unwrap();
+        let items = Array::new(&arena, (0..12).map(|v| v as i64)).unwrap();
+        for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i64)).enumerate() {
+            assert_eq!(*item, expected, "at index {}", i);
+        }
+    }
+
+    #[test]
+    fn has_items_when_iterating_items_i8() {
+        let memory = Memory::new();
+        let arena = Arena::new(&memory).unwrap();
+        let items = Array::new(&arena, (0..12).map(|v| v as i8)).unwrap();
+        for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i8)).enumerate() {
+            assert_eq!(*item, expected, "at index {}", i);
+        }
+    }
+
+    #[test]
+    fn has_items_when_iterating_items_i16() {
+        let memory = Memory::new();
+        let arena = Arena::new(&memory).unwrap();
+        let items = Array::new(&arena, (0..12).map(|v| v as i16)).unwrap();
+        for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i16)).enumerate() {
+            assert_eq!(*item, expected, "at index {}", i);
         }
     }
 }

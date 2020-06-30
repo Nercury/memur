@@ -19,6 +19,7 @@ is nearby.
 */
 
 const MAX_DROP_LIST_ITEMS: usize = 1022;
+// const MAX_DROP_LIST_ITEMS: usize = 3;
 
 pub struct DropList {
     items: [Option<DropItem>; MAX_DROP_LIST_ITEMS],
@@ -101,6 +102,8 @@ pub type DropFn = unsafe fn(*const u8) -> ();
 
 #[inline(always)]
 pub unsafe fn drop<T: Sized>(bytes: *const u8) {
+    let ptr_to_t = bytes as *const T;
+    debug_assert_eq!(ptr_to_t.align_offset(std::mem::align_of::<T>()), 0, "drop alignment incorrect");
     let ref_to_t = std::mem::transmute::<*const u8, &T>(bytes);
     std::mem::transmute_copy::<T, T>(ref_to_t);
 }
@@ -113,7 +116,7 @@ mod tests {
     use std::cell::RefCell;
 
     #[test]
-    fn droplist() {
+    fn droplist_single() {
         let mut list = DropList::empty();
         let flag1 = DropFlag::new(RefCell::new(0));
         let droppable1 = DropableWithData { data: 42, dropflag: flag1.clone() };
@@ -176,15 +179,8 @@ mod tests {
                 if !first_full {
                     match list1.push_drop_fn::<DropableWithData>(location_of_struct_start) {
                         DropListWriteResult::ListFull => {
-                            // if the first droplist is full, set the next droplist and push to the next from now on
-
-                            {
-                                first_full = true;
-                                list1.set_next_list((&mut list2) as *mut DropList);
-                            }
-                            if let DropListWriteResult::ListFull = list2.push_drop_fn::<DropableWithData>(copy_target_slice.as_ptr()) {
-                                panic!("second list full");
-                            }
+                            first_full = true;
+                            list1.set_next_list((&mut list2) as *mut DropList);
                         },
                         DropListWriteResult::ListNotFull => (),
                     }

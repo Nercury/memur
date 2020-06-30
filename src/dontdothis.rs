@@ -26,3 +26,9 @@ pub unsafe fn value_as_mut_slice<T: Sized>(val: &mut T) -> &mut [u8] {
     let ptr_to_val = std::mem::transmute::<&T, *mut u8>(val);
     std::slice::from_raw_parts_mut(ptr_to_val, std::mem::size_of::<T>())
 }
+
+pub const fn next_item_aligned_start<T>(previous_item_end: usize) -> usize {
+    let align = std::mem::align_of::<T>();
+    let padding = (align - (previous_item_end % align)) % align;
+    previous_item_end + padding
+}

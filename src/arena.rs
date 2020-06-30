@@ -106,9 +106,6 @@ impl ArenaMetadata {
                 };
                 (*self.last_drop_list).set_next_list(next_drop_list);
                 self.last_drop_list = next_drop_list;
-                if let DropListWriteResult::ListFull = (*self.last_drop_list).push_drop_fn::<T>(data) {
-                    unreachable!("new drop list should be empty");
-                }
             },
             DropListWriteResult::ListNotFull => (),
         })
@@ -187,7 +184,32 @@ impl ArenaMetadata {
             return Ok(last_block.upload_bytes_unchecked(aligned_start, len, value));
         }
 
-        unreachable!("upload_no_drop_bytes failed after acquiring next block")
+        unreachable!("upload_no_drop_bytes failed after acquiring the next block")
+    }
+
+    pub unsafe fn alloc_no_drop_items_aligned_uninit<T>(&mut self, len: usize, offset_between_items: usize) -> Result<*mut T, UploadError> {
+        let last_block = self.last_block.as_mut().unwrap();
+        let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<T>();
+        let total_array_len = len * offset_between_items;
+        if remaining_bytes_for_alignment >= total_array_len as isize {
+            return Ok(last_block.upload_bytes_unchecked_uninit(aligned_start, len) as *mut T);
+        }
+
+        if total_array_len > last_block.largest_item_size() {
+            return Err(UploadError::ItemDoesNotFit);
+        }
+
+        let mut block = Some(Block::new(self.memory.take_block()));
+        std::mem::swap(&mut block, &mut self.last_block);
+        let last_block = self.last_block.as_mut().unwrap();
+        last_block.set_previous_block(block.unwrap());
+
+        let (remaining_bytes_for_alignment, aligned_start) = last_block.remaining_bytes_for_alignment::<T>();
+        if remaining_bytes_for_alignment >= total_array_len as isize {
+            return Ok(last_block.upload_bytes_unchecked_uninit(aligned_start, len) as *mut T);
+        }
+
+        unreachable!("alloc_no_drop_items_aligned_uninit failed after acquiring the next block")
     }
 
     pub unsafe fn drop_objects(&mut self) {
@@ -291,6 +313,12 @@ impl Arena {
     #[inline(always)]
     pub unsafe fn upload_no_drop_bytes(&self, len: usize, value: impl Iterator<Item=u8>) -> Result<*mut u8, UploadError> {
         self.md().upload_no_drop_bytes(len, value)
+    }
+
+    /// Place uninitialized items to arena and return a pointer to the first item. This ensures the alignment of the first item.
+    #[inline(always)]
+    pub unsafe fn alloc_no_drop_items_aligned_uninit<T>(&self, len: usize, offset_between_items: usize) -> Result<*mut T, UploadError> {
+        self.md().alloc_no_drop_items_aligned_uninit::<T>(len, offset_between_items)
     }
 
     /// Clone as `WeakArena`.

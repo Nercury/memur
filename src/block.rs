@@ -1,4 +1,5 @@
 use crate::dontdothis;
+use crate::dontdothis::next_item_aligned_start;
 
 pub enum PlacementError {
     NotEnoughSpaceInBlock,
@@ -86,9 +87,7 @@ impl Block {
 
     pub unsafe fn push_copy<T>(&mut self, value: &T) -> Result<*mut T, PlacementError> {
         let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
-        let align = std::mem::align_of::<T>();
-        let padding = (align - (metadata.next_item_offset % align)) % align;
-        let aligned = metadata.next_item_offset + padding;
+        let aligned = next_item_aligned_start::<T>(metadata.next_item_offset);
         let end = aligned + std::mem::size_of::<T>();
         if end > self.data.len() {
             if std::mem::size_of::<T>() > self.largest_item_size() {
@@ -116,9 +115,7 @@ impl Block {
 
     pub fn remaining_bytes_for_alignment<T>(&self) -> (isize, usize) {
         let metadata = unsafe { BlockMetadata::reinterpret_from_slice(&*self.data) };
-        let align = std::mem::align_of::<T>();
-        let padding = (align - (metadata.next_item_offset % align)) % align;
-        let aligned = metadata.next_item_offset + padding;
+        let aligned = next_item_aligned_start::<T>(metadata.next_item_offset);
         (self.data.len() as isize - aligned as isize, aligned)
     }
 
@@ -130,6 +127,15 @@ impl Block {
         for (inbyte, outbyte) in value.zip(target_slice.iter_mut()) {
             *outbyte = inbyte;
         }
+        metadata.next_item_offset = end;
+        target_slice.as_mut_ptr()
+    }
+
+    pub unsafe fn upload_bytes_unchecked_uninit(&mut self, aligned_start: usize, len: usize) -> *mut u8 {
+        let metadata = BlockMetadata::reinterpret_from_slice_mut(&mut *self.data);
+        let end = aligned_start + len;
+        debug_assert!(end <= self.data.len(), "upload_bytes_unchecked end <= data.len");
+        let target_slice = &mut self.data[aligned_start..];
         metadata.next_item_offset = end;
         target_slice.as_mut_ptr()
     }
