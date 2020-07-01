@@ -11,9 +11,6 @@ impl ArenaMemoryInstance {
     pub fn new(options: &MemoryBuilder) -> ArenaMemoryInstance {
         let mut i = ArenaMemoryInstance {
             free_blocks: VecDeque::with_capacity(1024),
-            // max_free_blocks: 1024 * 16,
-            // min_free_blocks: 1024 * 4,
-            // new_block_size: 1024 * 1024,
             max_free_blocks_to_initialize_or_cleanup_to: options.max_free_blocks_to_initialize_or_cleanup_to,
             min_free_blocks_before_allocating_new: options.min_free_blocks_before_allocating_new,
             new_block_size: options.new_block_size,
@@ -130,7 +127,7 @@ impl Memory {
     /// Cleans up the memory and returns cleaned-up memory size if the amount of free blocks is
     /// above `max`.
     #[inline(always)]
-    pub fn cleanup(&mut self) -> usize {
+    pub fn cleanup(&self) -> usize {
         self.shared.lock().expect("lock").cleanup()
     }
 
