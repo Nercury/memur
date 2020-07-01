@@ -2,6 +2,7 @@ use crate::{Arena, UploadError, WeakArena};
 use crate::dontdothis::next_item_aligned_start;
 use std::ptr::{null_mut};
 use crate::iter::EmptyIfDeadIter;
+use std::borrow::Borrow;
 
 /// Continuous memory block containing many elements of the same type.
 pub struct Array<T> where T: Sized {
@@ -11,7 +12,6 @@ pub struct Array<T> where T: Sized {
 
 struct ArrayMetadata<T> {
     _len: usize,
-    _offset: usize,
     _data: *mut T,
 }
 
@@ -21,7 +21,7 @@ fn drop_array<T>(data: *const u8) {
         return;
     }
 
-    for item_ptr in unsafe { Array::<T>::iter_impl(metadata._data as *const u8, metadata._len, metadata._offset) } {
+    for item_ptr in unsafe { Array::<T>::iter_impl(metadata._data as *const u8, metadata._len) } {
         let item_ref: &T = unsafe { std::mem::transmute::<*const T, &T>(item_ptr) };
         let _oh_look_it_teleported_here: T = unsafe { std::mem::transmute_copy::<T, T>(item_ref) };
     }
@@ -49,7 +49,6 @@ impl<T> Array<T> where T: Sized {
             let len = iter.len();
             let metadata = arena.upload_no_drop::<ArrayMetadata<T>>(ArrayMetadata::<T> {
                 _len: len,
-                _offset: Self::aligned_item_size(),
                 _data: null_mut(),
             })?;
 
@@ -57,7 +56,7 @@ impl<T> Array<T> where T: Sized {
 
             // Prepare a memory block in arena, that is correctly aligned for the type T,
             // the item size also needs to be such that pointers to items are valid.
-            let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(len, Self::aligned_item_size())? as *mut u8;
+            let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(len, std::mem::size_of::<T>())? as *mut u8;
             (*metadata)._data = ptr as *mut T;
 
             // Consume items in iterator
@@ -86,10 +85,10 @@ impl<T> Array<T> where T: Sized {
         }
     }
 
-    unsafe fn iter_impl(data: *const u8, len: usize, offset: usize) -> impl ExactSizeIterator<Item=*const T> {
+    unsafe fn iter_impl(data: *const u8, len: usize) -> impl ExactSizeIterator<Item=*const T> {
         (0..len)
             .map(move |i| {
-                let total_offset = offset * i;
+                let total_offset = std::mem::size_of::<T>() * i;
                 data.offset(total_offset as isize) as *const T
             })
     }
@@ -98,7 +97,7 @@ impl<T> Array<T> where T: Sized {
     pub fn safer_iter(&self) -> Option<impl ExactSizeIterator<Item=&T>> {
         if self._arena.is_alive() {
             Some(unsafe {
-                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len, (*self._metadata)._offset)
+                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len)
                     .map(|ptr| std::mem::transmute::<*const T, &T>(ptr))
             })
         } else {
@@ -111,7 +110,7 @@ impl<T> Array<T> where T: Sized {
         EmptyIfDeadIter {
             is_alive: self._arena.is_alive(),
             inner: unsafe {
-                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len, (*self._metadata)._offset)
+                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len)
                     .map(|ptr| std::mem::transmute::<*const T, &T>(ptr))
             }
         }
@@ -121,7 +120,7 @@ impl<T> Array<T> where T: Sized {
     pub fn safer_iter_mut(&self) -> Option<impl ExactSizeIterator<Item=&mut T>> {
         if self._arena.is_alive() {
             Some(unsafe {
-                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len, (*self._metadata)._offset)
+                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len)
                     .map(|ptr| std::mem::transmute::<*const T, &mut T>(ptr))
             })
         } else {
@@ -134,10 +133,32 @@ impl<T> Array<T> where T: Sized {
         EmptyIfDeadIter {
             is_alive: self._arena.is_alive(),
             inner: unsafe {
-                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len, (*self._metadata)._offset)
+                Self::iter_impl((*self._metadata)._data as *const u8, (*self._metadata)._len)
                     .map(|ptr| std::mem::transmute::<*const T, &mut T>(ptr))
             }
         }
+    }
+}
+
+impl<T> AsRef<[T]> for Array<T> {
+    fn as_ref(&self) -> &[T] {
+        unsafe { std::slice::from_raw_parts((*self._metadata)._data as *const T, (*self._metadata)._len) }
+    }
+}
+
+impl<T> Borrow<[T]> for Array<T> {
+    fn borrow(&self) -> &[T] {
+        self.as_ref()
+    }
+}
+
+impl<T> std::fmt::Debug for Array<T> where T: std::fmt::Debug, T: Sized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut list = f.debug_list();
+        for i in self.iter() {
+            list.entry(i);
+        }
+        list.finish()
     }
 }
 
