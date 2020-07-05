@@ -33,4 +33,11 @@ impl<T> N<T> {
             None
         }
     }
+
+    pub fn outlives<O>(&self, value: O) -> Result<N<O>, UploadError> {
+        match self._arena.arena() {
+            None => Err(UploadError::ArenaIsNotAlive),
+            Some(arena) => N::new(&arena, value),
+        }
+    }
 }
