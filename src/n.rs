@@ -79,21 +79,23 @@ impl<T> N<T> {
                 let wrapped = NMetadata { value, outlives: null_mut() };
                 let o_wrapper_ptr = unsafe { arena.upload_no_drop(wrapped)? };
                 let md = unsafe { std::mem::transmute::<*mut NMetadata<T>, &mut NMetadata<T>>(self._ptr) };
+                let drop_item = unsafe { arena.upload_no_drop(DropItem {
+                    fun: |data| {
+                        println!("drop closure {:?}", data);
+                        let o_ref = std::mem::transmute::<*const u8, &NMetadata<O>>(data);
+                        let o = std::mem::transmute_copy::<NMetadata<O>, NMetadata<O>>(o_ref);
+                        std::mem::drop(o);
+                    },
+                    data: o_wrapper_ptr as *const u8,
+                    next: null_mut(),
+                }) }?;
+
                 if md.outlives == null_mut() {
-                    let drop_item = unsafe { arena.upload_no_drop(DropItem {
-                        fun: |data| {
-                            println!("drop closure {:?}", data);
-                            let o_ref = std::mem::transmute::<*const u8, &NMetadata<O>>(data);
-                            let o = std::mem::transmute_copy::<NMetadata<O>, NMetadata<O>>(o_ref);
-                            std::mem::drop(o);
-                        },
-                        data: o_wrapper_ptr as *const u8,
-                        next: null_mut(),
-                    }) }?;
                     md.outlives = drop_item;
-                } else {
-                    panic!("TODO")
-                }
+                } else { unsafe {
+                    (*drop_item).next = md.outlives;
+                    md.outlives = drop_item;
+                } }
                 Ok(N {
                     _arena: self._arena.clone(),
                     _ptr: o_wrapper_ptr,
