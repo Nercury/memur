@@ -54,12 +54,30 @@ impl<T> N<T> {
         })
     }
 
+    /// Returns a reference to value or panics if arena is dead.
+    pub fn expect(&self, message: &str) -> &T {
+        if self._arena.is_alive() {
+            &unsafe { std::mem::transmute::<*mut NMetadata<T>, &NMetadata<T>>(self._ptr) }.value
+        } else {
+            panic!("{}", message);
+        }
+    }
+
     /// Returns a reference to value if the arena is alive.
     pub fn val(&self) -> Option<&T> {
         if self._arena.is_alive() {
             Some(&unsafe { std::mem::transmute::<*mut NMetadata<T>, &NMetadata<T>>(self._ptr) }.value)
         } else {
             None
+        }
+    }
+
+    /// Returns a mutable reference to value or panics if arena is dead.
+    pub fn expect_mut(&self, message: &str) -> &mut T {
+        if self._arena.is_alive() {
+            &mut unsafe { std::mem::transmute::<*mut NMetadata<T>, &mut NMetadata<T>>(self._ptr) }.value
+        } else {
+            panic!("{}", message);
         }
     }
 
