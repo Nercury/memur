@@ -4,6 +4,45 @@ use std::ptr::{null_mut};
 use crate::iter::EmptyIfDeadIter;
 use std::borrow::Borrow;
 
+/// Continuous memory block containing uninitialized elements of the same type, and can be used to
+/// initialize the `Array`.
+pub struct UninitArray<T> where T: Sized {
+    _arena: WeakArena,
+    _capacity: usize,
+    _metadata: *mut ArrayMetadata<T>,
+}
+
+impl<T> UninitArray<T> where T: Sized {
+    /// Returns the number of initialized items in array if the `Arena` is alive.
+    pub fn len(&self) -> Option<usize> {
+        if self._arena.is_alive() {
+            Some(unsafe { (*self._metadata)._len })
+        } else {
+            None
+        }
+    }
+
+    /// Returns the capacity, or maximum allowed items in array if the `Arena` is alive.
+    pub fn capacity(&self) -> usize {
+        self._capacity
+    }
+
+    pub unsafe fn data_mut(&mut self) -> *mut T {
+        (*self._metadata)._data
+    }
+
+    pub unsafe fn initialized_to_len(self, len: usize) -> Array<T> {
+        if len > self._capacity {
+            panic!("set_len exceeds capacity");
+        }
+        (*self._metadata)._len = len;
+        Array {
+            _arena: self._arena,
+            _metadata: self._metadata,
+        }
+    }
+}
+
 /// Continuous memory block containing many elements of the same type.
 pub struct Array<T> where T: Sized {
     _arena: WeakArena,
@@ -21,9 +60,12 @@ fn drop_array<T>(data: *const u8) {
         return;
     }
 
-    for item_ptr in unsafe { Array::<T>::iter_impl(metadata._data as *const u8, metadata._len) } {
+    let len = metadata._len;
+    metadata._len = 0;
+    for item_ptr in unsafe { Array::<T>::iter_impl(metadata._data as *const u8, len) } {
         let item_ref: &T = unsafe { std::mem::transmute::<*const T, &T>(item_ptr) };
-        let _oh_look_it_teleported_here: T = unsafe { std::mem::transmute_copy::<T, T>(item_ref) };
+        let item: T = unsafe { std::mem::transmute_copy::<T, T>(item_ref) };
+        std::mem::drop(item);
     }
 
     metadata._data = null_mut();
@@ -40,6 +82,32 @@ impl<T> Array<T> where T: Sized {
             Some(unsafe { (*self._metadata)._len })
         } else {
             None
+        }
+    }
+
+    /// Creates a new array with specified capacity and does not place data to it, the array items are not initialized.
+    ///
+    /// If array is dropped in this state, nothing happens, because the len is zero.
+    ///
+    /// Once the items are initialized, this array can be converted to `Array` type.
+    /// The total number of items in array can not exceed the initial capacity.
+    pub fn with_capacity(arena: &Arena, capacity: usize) -> Result<UninitArray<T>, UploadError> {
+        unsafe {
+            let metadata = arena.upload_no_drop::<ArrayMetadata<T>>(ArrayMetadata::<T> {
+                _len: 0,
+                _data: null_mut(),
+            })?;
+
+            arena.push_custom_drop_fn(drop_array::<T>, metadata as *const u8)?;
+
+            let ptr = arena.alloc_no_drop_items_aligned_uninit::<T>(capacity, std::mem::size_of::<T>())? as *mut u8;
+            (*metadata)._data = ptr as *mut T;
+
+            Ok(UninitArray {
+                _arena: arena.to_weak_arena(),
+                _capacity: capacity,
+                _metadata: metadata,
+            })
         }
     }
 
