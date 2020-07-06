@@ -1,5 +1,5 @@
 use crate::{Memory, DropFn};
-use crate::droplist::{DropList, DropListWriteResult};
+use crate::droplist::{DropList, DropListWriteResult, DropItem};
 use std::ptr::{null_mut};
 use crate::block::{Block, PlacementError};
 use std::fmt::Debug;
@@ -92,23 +92,29 @@ impl ArenaMetadata {
         //println!("dec_wk s {} t {}", self.strong_rc, self.rc);
     }
 
-    unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> Result<(), UploadError> {
+    unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> Result<*const Option<DropItem>, UploadError> {
         debug_assert_ne!(null_mut(), self.first_drop_list, "push: drop list not null (1)");
         debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (2)");
 
         Ok(match (*self.last_drop_list).push_drop_fn::<T>(data) {
-            DropListWriteResult::ListFull => self.push_next_drop_list()?,
-            DropListWriteResult::ListNotFull => (),
+            (DropListWriteResult::ListFull, item) => {
+                self.push_next_drop_list()?;
+                item
+            },
+            (DropListWriteResult::ListNotFull, item) => item,
         })
     }
 
-    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
+    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> Result<*const Option<DropItem>, UploadError> {
         debug_assert_ne!(null_mut(), self.first_drop_list, "push: drop list not null (3)");
         debug_assert_ne!(null_mut(), self.last_drop_list, "push: drop list not null (4)");
 
         Ok(match (*self.last_drop_list).push_custom_drop_fn(fun, data) {
-            DropListWriteResult::ListFull => self.push_next_drop_list()?,
-            DropListWriteResult::ListNotFull => (),
+            (DropListWriteResult::ListFull, item) => {
+                self.push_next_drop_list()?;
+                item
+            },
+            (DropListWriteResult::ListNotFull, item) => item,
         })
     }
 
@@ -125,13 +131,13 @@ impl ArenaMetadata {
 
     /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
     /// item when there are no remaining `Arena` instances.
-    pub unsafe fn upload_auto_drop<T>(&mut self, value: T) -> Result<*mut T, UploadError> {
+    pub unsafe fn upload_auto_drop<T>(&mut self, value: T) -> Result<(*mut T, *const Option<DropItem>), UploadError> {
         let last_block = self.last_block.as_mut().unwrap();
         match last_block.push_copy::<T>(&value) {
             Ok(value_ptr) => {
                 std::mem::forget(value);
-                self.push_drop_fn::<T>(value_ptr as *const u8)?;
-                return Ok(value_ptr);
+                let drop_item = self.push_drop_fn::<T>(value_ptr as *const u8)?;
+                return Ok((value_ptr, drop_item));
             },
             Err(e) => match e {
                 PlacementError::NotEnoughSpaceInBlock => (),
@@ -146,8 +152,8 @@ impl ArenaMetadata {
 
         let value_ptr = last_block.push_copy::<T>(&value).ok().expect("fits into subsequent block (1)");
         std::mem::forget(value);
-        self.push_drop_fn::<T>(value_ptr as *const u8)?;
-        Ok(value_ptr)
+        let drop_item = self.push_drop_fn::<T>(value_ptr as *const u8)?;
+        Ok((value_ptr, drop_item))
     }
 
     /// Place item to arena and return a pointer to it, without adding a drop function.
@@ -309,9 +315,9 @@ impl Arena {
     }
 
     /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
-    /// item when there are no remaining `Arena` instances.
+    /// item when there are no remaining `Arena` instances. Result also contains a pointer to drop item that is valid while arena is alive.
     #[inline(always)]
-    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
+    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<(*mut T, *const Option<DropItem>), UploadError> {
         self.md().upload_auto_drop::<T>(value)
     }
 
@@ -337,7 +343,7 @@ impl Arena {
     ///
     /// The data pointer should point to a memory location inside the arena.
     #[inline(always)]
-    pub unsafe fn push_custom_drop_fn(&self, fun: DropFn, data: *const u8) -> Result<(), UploadError> {
+    pub unsafe fn push_custom_drop_fn(&self, fun: DropFn, data: *const u8) -> Result<*const Option<DropItem>, UploadError> {
         self.md().push_custom_drop_fn(fun, data)
     }
 
@@ -366,7 +372,7 @@ impl WeakArena {
     /// Place item to arena and return a pointer to it, and also add drop function to drop list to drop this
     /// item when there are no remaining `Arena` instances.
     #[inline(always)]
-    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<*mut T, UploadError> {
+    pub unsafe fn upload_auto_drop<T>(&self, value: T) -> Result<(*mut T, *const Option<DropItem>), UploadError> {
         if self.is_alive() {
             Ok(self.md().upload_auto_drop::<T>(value)?)
         } else {

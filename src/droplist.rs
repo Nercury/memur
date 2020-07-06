@@ -37,17 +37,22 @@ impl DropList {
         }
     }
 
-    unsafe fn write_item(&mut self, item: DropItem) -> DropListWriteResult {
-        self.items[self.used_items as usize] = Some(item);
+    unsafe fn write_item(&mut self, item: DropItem) -> (DropListWriteResult, *const Option<DropItem>) {
+        let ix = self.used_items as usize;
+        self.items[ix] = Some(item);
         self.used_items += 1;
-        if self.used_items as usize == MAX_DROP_LIST_ITEMS {
-            DropListWriteResult::ListFull
-        } else {
-            DropListWriteResult::ListNotFull
-        }
+        let item_ptr = self.items.get_unchecked(ix) as *const Option<DropItem>;
+        (
+            if self.used_items as usize == MAX_DROP_LIST_ITEMS {
+                DropListWriteResult::ListFull
+            } else {
+                DropListWriteResult::ListNotFull
+            },
+            item_ptr
+        )
     }
 
-    pub unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> DropListWriteResult {
+    pub unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> (DropListWriteResult, *const Option<DropItem>) {
         let drop_item = DropItem {
             fun: drop::<T>,
             data,
@@ -55,7 +60,7 @@ impl DropList {
         self.write_item(drop_item)
     }
 
-    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> DropListWriteResult {
+    pub unsafe fn push_custom_drop_fn(&mut self, fun: DropFn, data: *const u8) -> (DropListWriteResult, *const Option<DropItem>) {
         let drop_item = DropItem {
             fun,
             data,
@@ -93,6 +98,10 @@ pub enum DropListWriteResult {
     ListNotFull,
 }
 
+/// Drop function with the data required to execute the drop.
+///
+/// The data is passed to drop function when it is executed, and the drop function knows how
+/// to interpret this data.
 #[derive(Copy, Clone)]
 pub struct DropItem {
     pub fun: DropFn,
@@ -189,18 +198,18 @@ mod tests {
 
                 if !first_full {
                     match list1.push_drop_fn::<DropableWithData>(location_of_struct_start) {
-                        DropListWriteResult::ListFull => {
+                        (DropListWriteResult::ListFull, _) => {
                             first_full = true;
                             list1.set_next_list((&mut list2) as *mut DropList);
                         },
-                        DropListWriteResult::ListNotFull => (),
+                        (DropListWriteResult::ListNotFull, _) => (),
                     }
                 } else {
                     match list2.push_drop_fn::<DropableWithData>(location_of_struct_start) {
-                        DropListWriteResult::ListFull => {
+                        (DropListWriteResult::ListFull, _) => {
                             panic!("second list full");
                         },
-                        DropListWriteResult::ListNotFull => (),
+                        (DropListWriteResult::ListNotFull, _) => (),
                     }
                 }
             }

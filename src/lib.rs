@@ -17,7 +17,7 @@ pub use ustr::{UStr, UStrError};
 pub use arena::{WeakArena, Arena, UploadError};
 pub use n::N;
 pub use traits::MemurIterator;
-pub use droplist::DropFn;
+pub use droplist::{DropFn, DropItem};
 
 #[cfg(test)]
 pub mod dropflag;

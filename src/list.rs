@@ -42,7 +42,7 @@ impl<T> List<T> where T: Sized {
     /// Initializes a new list in arena and returns a handle to it.
     pub fn new(arena: &Arena) -> Result<List<T>, UploadError> {
         unsafe {
-            let starting_sequence = arena.upload_auto_drop(PartialSequence::empty())?;
+            let (starting_sequence, _) = arena.upload_auto_drop(PartialSequence::empty())?;
 
             Ok(List {
                 arena: arena.to_weak_arena(),
@@ -128,13 +128,13 @@ impl<T> List<T> where T: Sized {
 
         unsafe {
             if let Some(empty_slot) = (*self._last).take_empty_slot() {
-                let item_ptr = arena.upload_auto_drop(item)?;
+                let (item_ptr, _) = arena.upload_auto_drop(item)?;
                 *empty_slot = item_ptr;
             } else {
-                let next_sequence = arena.upload_auto_drop(PartialSequence::empty())?;
+                let (next_sequence, _) = arena.upload_auto_drop(PartialSequence::empty())?;
                 (*self._last).next_list = next_sequence;
                 self._last = next_sequence;
-                let item_ptr = arena.upload_auto_drop(item)?;
+                let (item_ptr, _) = arena.upload_auto_drop(item)?;
                 let empty_slot = (*self._last).take_empty_slot().unwrap();
                 *empty_slot = item_ptr;
             }
