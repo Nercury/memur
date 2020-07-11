@@ -3,6 +3,7 @@ use crate::dontdothis::next_item_aligned_start;
 use std::ptr::{null_mut};
 use crate::iter::EmptyIfDeadIter;
 use std::borrow::Borrow;
+use std::ops::{Index, IndexMut, Range, RangeFrom, RangeTo, RangeToInclusive, RangeFull};
 
 /// Continuous memory block containing uninitialized elements of the same type, and can be used to
 /// initialize the `Array`.
@@ -208,13 +209,118 @@ impl<T> Array<T> where T: Sized {
     }
 }
 
+impl<T> Index<Range<usize>> for Array<T> {
+    type Output = [T];
+
+    #[inline(always)]
+    fn index(&self, range: Range<usize>) -> &[T] {
+        &self.as_ref()[range.start..range.end]
+    }
+}
+
+impl<T> IndexMut<Range<usize>> for Array<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, range: Range<usize>) -> &mut [T] {
+        &mut self.as_mut()[range.start..range.end]
+    }
+}
+
+impl<T> Index<RangeFrom<usize>> for Array<T> {
+    type Output = [T];
+
+    #[inline(always)]
+    fn index(&self, range: RangeFrom<usize>) -> &[T] {
+        &self.as_ref()[range.start..]
+    }
+}
+
+impl<T> IndexMut<RangeFrom<usize>> for Array<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, range: RangeFrom<usize>) -> &mut [T] {
+        &mut self.as_mut()[range.start..]
+    }
+}
+
+impl<T> Index<RangeTo<usize>> for Array<T> {
+    type Output = [T];
+
+    #[inline(always)]
+    fn index(&self, range: RangeTo<usize>) -> &[T] {
+        &self.as_ref()[..range.end]
+    }
+}
+
+impl<T> IndexMut<RangeTo<usize>> for Array<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, range: RangeTo<usize>) -> &mut [T] {
+        &mut self.as_mut()[..range.end]
+    }
+}
+
+impl<T> Index<RangeToInclusive<usize>> for Array<T> {
+    type Output = [T];
+
+    #[inline(always)]
+    fn index(&self, range: RangeToInclusive<usize>) -> &[T] {
+        &self.as_ref()[..=range.end]
+    }
+}
+
+impl<T> IndexMut<RangeToInclusive<usize>> for Array<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, range: RangeToInclusive<usize>) -> &mut [T] {
+        &mut self.as_mut()[..=range.end]
+    }
+}
+
+impl<T> Index<RangeFull> for Array<T> {
+    type Output = [T];
+
+    #[inline(always)]
+    fn index(&self, _: RangeFull) -> &[T] {
+        self.as_ref()
+    }
+}
+
+impl<T> IndexMut<RangeFull> for Array<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, _: RangeFull) -> &mut [T] {
+        self.as_mut()
+    }
+}
+
+impl<T> Index<usize> for Array<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, index: usize) -> &T {
+        &self.as_ref()[index]
+    }
+}
+
+impl<T> IndexMut<usize> for Array<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        &mut self.as_mut()[index]
+    }
+}
+
 impl<T> AsRef<[T]> for Array<T> {
+    #[inline(always)]
     fn as_ref(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts((*self._metadata)._data as *const T, (*self._metadata)._len) }
     }
 }
 
+impl<T> AsMut<[T]> for Array<T> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut [T] {
+        unsafe { std::slice::from_raw_parts_mut((*self._metadata)._data as *mut T, (*self._metadata)._len) }
+    }
+}
+
 impl<T> Borrow<[T]> for Array<T> {
+    #[inline(always)]
     fn borrow(&self) -> &[T] {
         self.as_ref()
     }
