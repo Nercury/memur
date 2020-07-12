@@ -1,5 +1,5 @@
 use crate::{Arena, UploadError, WeakArena};
-use crate::dontdothis::next_item_aligned_start;
+use crate::dontdothis::{next_item_aligned_start, value_as_slice};
 use std::ptr::{null_mut};
 use crate::iter::EmptyIfDeadIter;
 use std::borrow::Borrow;
@@ -15,11 +15,11 @@ pub struct UninitArray<T> where T: Sized {
 
 impl<T> UninitArray<T> where T: Sized {
     /// Returns the number of initialized items in array if the `Arena` is alive.
-    pub fn len(&self) -> Option<usize> {
+    pub fn len(&self) -> usize {
         if self._arena.is_alive() {
-            Some(unsafe { (*self._metadata)._len })
+            unsafe { (*self._metadata)._len }
         } else {
-            None
+            0
         }
     }
 
@@ -40,6 +40,40 @@ impl<T> UninitArray<T> where T: Sized {
         Array {
             _arena: self._arena,
             _metadata: self._metadata,
+        }
+    }
+
+    pub fn start_initializer(self) -> ArrayInitializer<T> {
+        ArrayInitializer {
+            uninit_array: self,
+            initialized_len: 0,
+        }
+    }
+}
+
+pub struct ArrayInitializer<T> where T: Sized {
+    uninit_array: UninitArray<T>,
+    initialized_len: usize,
+}
+
+impl<T> ArrayInitializer<T> where T: Sized {
+    pub fn push(&mut self, item: T) {
+        if self.initialized_len < self.uninit_array.len() {
+            let target_byte_ptr = unsafe { self.uninit_array.data_mut().offset(self.initialized_len as isize) as *mut u8 };
+            let ref_to_target = unsafe { std::slice::from_raw_parts_mut(target_byte_ptr, std::mem::size_of::<T>()) };
+            let ref_to_source = unsafe { value_as_slice(&item) };
+            for (in_byte, out_byte) in ref_to_source.iter().zip(ref_to_target.iter_mut()) {
+                *out_byte = *in_byte;
+            }
+            self.initialized_len += 1;
+        }
+    }
+
+    pub fn initialized(self) -> Option<Array<T>> {
+        if self.initialized_len > self.uninit_array.len() {
+            None
+        } else {
+            Some(unsafe { self.uninit_array.initialized_to_len(self.initialized_len) })
         }
     }
 }
