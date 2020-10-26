@@ -44,14 +44,14 @@ impl ArenaMemoryInstance {
         self.check_if_not_enough_blocks_and_initialize();
         let block = self.free_blocks.pop_back().expect("no allocated memory");
 
-        //println!("-- take   block of size {}", block.len());
+        println!("-- take   block of size {}", block.len());
 
         block
     }
 
     pub fn return_block(&mut self, block: Box<[u8]>) {
 
-        //println!("-- return block of size {}", block.len());
+        println!("-- return block of size {}", block.len());
 
         self.free_blocks.push_back(block);
     }

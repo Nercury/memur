@@ -32,7 +32,7 @@ impl<T> Drop for NMetadata<T> {
                 outlives = next;
             }
         }
-        println!("drop NMetadata");
+        //println!("drop NMetadata");
     }
 }
 
@@ -55,9 +55,9 @@ impl<T> N<T> {
     }
 
     /// Returns a reference to value or panics if arena is dead.
-    pub fn expect(&self, message: &str) -> &T {
-        if self._arena.is_alive() {
-            &unsafe { std::mem::transmute::<*mut NMetadata<T>, &NMetadata<T>>(self._ptr) }.value
+    pub fn expect(&self, message: &str) -> (Arena, &T) {
+        if let Some(arena) = self._arena.arena() {
+            (arena, &unsafe { std::mem::transmute::<*mut NMetadata<T>, &NMetadata<T>>(self._ptr) }.value)
         } else {
             panic!("{}", message);
         }
@@ -73,9 +73,9 @@ impl<T> N<T> {
     }
 
     /// Returns a mutable reference to value or panics if arena is dead.
-    pub fn expect_mut(&self, message: &str) -> &mut T {
-        if self._arena.is_alive() {
-            &mut unsafe { std::mem::transmute::<*mut NMetadata<T>, &mut NMetadata<T>>(self._ptr) }.value
+    pub fn expect_mut(&self, message: &str) -> (Arena, &mut T) {
+        if let Some(arena) = self._arena.arena() {
+            (arena, &mut unsafe { std::mem::transmute::<*mut NMetadata<T>, &mut NMetadata<T>>(self._ptr) }.value)
         } else {
             panic!("{}", message);
         }
@@ -99,7 +99,7 @@ impl<T> N<T> {
                 let md = unsafe { std::mem::transmute::<*mut NMetadata<T>, &mut NMetadata<T>>(self._ptr) };
                 let drop_item = unsafe { arena.upload_no_drop(DropItem {
                     fun: |data| {
-                        println!("drop closure {:?}", data);
+                        //println!("drop closure {:?}", data);
                         let o_ref = std::mem::transmute::<*const u8, &NMetadata<O>>(data);
                         let o = std::mem::transmute_copy::<NMetadata<O>, NMetadata<O>>(o_ref);
                         std::mem::drop(o);

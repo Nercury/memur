@@ -238,7 +238,7 @@ impl ArenaMetadata {
     }
 
     /// After the call to this function metadata must not be used
-    pub unsafe fn reclaim_memory(&mut self) -> ArenaMetadata {
+    pub unsafe fn reclaim_memory(&mut self) {
         let mut block = None;
         std::mem::swap(&mut block, &mut self.last_block);
         while block.is_some() {
@@ -246,8 +246,6 @@ impl ArenaMetadata {
             self.memory.return_block(data);
             block = previous_block;
         }
-
-        std::mem::transmute_copy::<ArenaMetadata, ArenaMetadata>(&*self)
     }
 }
 
@@ -458,7 +456,7 @@ impl Drop for Arena {
 
 impl Drop for WeakArena {
     fn drop(&mut self) {
-        //println!("drop weak");
+        //println!("drop weak arena");
 
         let metadata = unsafe { self.md() };
         (*metadata).dec_weak();
