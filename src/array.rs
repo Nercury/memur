@@ -120,6 +120,11 @@ impl<T> Array<T> where T: Sized {
         }
     }
 
+    /// Returns true if arena is dead or array is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len().unwrap_or(0) == 0
+    }
+
     /// Creates a new array with specified capacity and does not place data to it, the array items are not initialized.
     ///
     /// If array is dropped in this state, nothing happens, because the len is zero.
