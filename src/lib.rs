@@ -9,7 +9,7 @@
 //! have a known point when all the data inside the arena should be deallocated.
 //! As an example, consider a game level. It may contain many objects, but we know we will
 //! deallocate them all at the same time when the level is no longer in use, and kind of don't
-//! care anymore about the objects contain.
+//! care anymore about the object contents.
 //!
 //! Another use case is when we want to ensure that objects are nearby in the memory.
 //! This kind of arena copies the value contents into a memory block and then only allows us to
