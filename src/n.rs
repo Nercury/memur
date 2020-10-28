@@ -90,6 +90,9 @@ impl<T> N<T> {
         }
     }
 
+    /// Puts another `value` to the same `Arena` and ensures that it is dropped only after this
+    /// value is dropped, in other words, this struct should outlive the specified struct.
+    /// Super useful for managing deterministic drop order.
     pub fn outlives<O>(&self, value: O) -> Result<N<O>, UploadError> {
         match self._arena.arena() {
             None => Err(UploadError::ArenaIsNotAlive),

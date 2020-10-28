@@ -28,10 +28,16 @@ impl<T> UninitArray<T> where T: Sized {
         self._capacity
     }
 
+    /// A pointer to array contents to unsafely initialize the items to appropriate values.
+    /// Call `initialized_to_len` to finalize initialization.
+    /// Alternatively, use `start_initializer` for safe initialization.
     pub unsafe fn data_mut(&mut self) -> *mut T {
         (*self._metadata)._data
     }
 
+    /// This function assumes the `len` items in `UninitArray` are properly initialized
+    /// and returns `Array` that points to the same memory. Any uninitialized items are not
+    /// re-claimed.
     pub unsafe fn initialized_to_len(self, len: usize) -> Array<T> {
         if len > self._capacity {
             panic!("set_len exceeds capacity");
@@ -43,6 +49,7 @@ impl<T> UninitArray<T> where T: Sized {
         }
     }
 
+    /// Returns the helper to safely initialize the array.
     pub fn start_initializer(self) -> ArrayInitializer<T> {
         ArrayInitializer {
             uninit_array: self,
@@ -51,12 +58,14 @@ impl<T> UninitArray<T> where T: Sized {
     }
 }
 
+/// A helper to safely initialize items of `UninitArray`.
 pub struct ArrayInitializer<T> where T: Sized {
     uninit_array: UninitArray<T>,
     initialized_len: usize,
 }
 
 impl<T> ArrayInitializer<T> where T: Sized {
+    /// Push new item to `UninitArray`.
     pub fn push(&mut self, item: T) {
         if self.initialized_len < self.uninit_array.len() {
             let target_byte_ptr = unsafe { self.uninit_array.data_mut().offset(self.initialized_len as isize) as *mut u8 };
@@ -69,6 +78,8 @@ impl<T> ArrayInitializer<T> where T: Sized {
         }
     }
 
+    /// Calling this function finalizes the array initialization. The number of items added over
+    /// this initializer should be lower or equal `UninitArray` length.
     pub fn initialized(self) -> Option<Array<T>> {
         if self.initialized_len > self.uninit_array.len() {
             None
