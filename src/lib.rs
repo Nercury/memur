@@ -305,6 +305,11 @@
 //! let list2 = a.iter().cloned().collect_list(&arena).unwrap();
 //! assert_eq!(list2.len(), 2);
 //! ```
+//!
+//! ### Custom structures
+//!
+//! It should be possible to implement custom structures for `memur`, all unsafe machinery
+//! should be accessible.
 
 mod droplist;
 mod dontdothis;
