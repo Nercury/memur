@@ -12,7 +12,7 @@ mod iter;
 
 pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
-pub use array::Array;
+pub use array::{Array, UninitArray, ArrayInitializer};
 pub use ustr::{UStr, UStrError};
 pub use arena::{WeakArena, Arena, UploadError};
 pub use n::N;
