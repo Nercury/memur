@@ -53,7 +53,7 @@
 //! into an empty droplist slot. The `Arena` keeps track of the first and last droplists.
 //! Last droplist is used to push another function as mentioned, and the first droplist is
 //! used to execute drop for all arena objects. The droplists themselves are daisy-chained together
-//! a linked list and end up interleaved in the memory between the objects to be dropped, making
+//! as a linked list and end up interleaved in the memory between the objects to be dropped, making
 //! their execution efficient.
 //!
 //! ### No-drop universal string type `UStr`
