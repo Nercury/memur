@@ -67,7 +67,7 @@ pub struct ArrayInitializer<T> where T: Sized {
 impl<T> ArrayInitializer<T> where T: Sized {
     /// Push new item to `UninitArray`.
     pub fn push(&mut self, item: T) {
-        if self.initialized_len < self.uninit_array.len() {
+        if self.initialized_len < self.uninit_array.capacity() {
             let target_byte_ptr = unsafe { self.uninit_array.data_mut().offset(self.initialized_len as isize) as *mut u8 };
             let ref_to_target = unsafe { std::slice::from_raw_parts_mut(target_byte_ptr, std::mem::size_of::<T>()) };
             let ref_to_source = unsafe { value_as_slice(&item) };
@@ -81,7 +81,7 @@ impl<T> ArrayInitializer<T> where T: Sized {
     /// Calling this function finalizes the array initialization. The number of items added over
     /// this initializer should be lower or equal `UninitArray` length.
     pub fn initialized(self) -> Option<Array<T>> {
-        if self.initialized_len > self.uninit_array.len() {
+        if self.initialized_len > self.uninit_array.capacity() {
             None
         } else {
             Some(unsafe { self.uninit_array.initialized_to_len(self.initialized_len) })
