@@ -56,7 +56,7 @@ fn main() {
         assert_eq!(a[0], 1);
         assert_eq!(a[1], 2);               
 
-        // The drop functions are executed when the Arena goes out os scope,
+        // The drop functions are executed when the Arena goes out of scope,
         // and the created objects are aware of that because they keep
         // WeakArena inside.
         

@@ -1,4 +1,4 @@
-//! Glow-only Arena implementation for structures of any type that also ensures fast end efficient
+//! Grow-only Arena implementation for structures of any type that also ensures fast end efficient
 //! drop order. It also has some common types that makes efficient use of `Arena` properties.
 //!
 //! ## What is Arena?
