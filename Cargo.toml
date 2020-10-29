@@ -10,5 +10,13 @@ repository = "https://github.com/Nercury/memur"
 keywords = ["arena", "any", "allocator", "memory"]
 categories = ["memory-management"]
 
+[features]
+default = []
+logging = ["log"]
+
+[dependencies.log]
+version = "0.4"
+optional = true
+
 [badges]
 travis-ci = { repository = "Nercury/memur" }
