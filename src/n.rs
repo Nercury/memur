@@ -24,7 +24,7 @@ impl<T> Drop for NMetadata<T> {
         let mut outlives = self.outlives;
         self.outlives = null_mut();
         while outlives != null_mut() {
-            println!("drop outlives");
+            trace!("drop outlives");
             unsafe {
                 (*outlives).execute();
                 let next = (*outlives).next;
@@ -32,7 +32,7 @@ impl<T> Drop for NMetadata<T> {
                 outlives = next;
             }
         }
-        //println!("drop NMetadata");
+        trace!("drop NMetadata");
     }
 }
 
@@ -102,7 +102,7 @@ impl<T> N<T> {
                 let md = unsafe { std::mem::transmute::<*mut NMetadata<T>, &mut NMetadata<T>>(self._ptr) };
                 let drop_item = unsafe { arena.upload_no_drop(DropItem {
                     fun: |data| {
-                        //println!("drop closure {:?}", data);
+                        trace!("drop closure {:?}", data);
                         let o_ref = std::mem::transmute::<*const u8, &NMetadata<O>>(data);
                         let o = std::mem::transmute_copy::<NMetadata<O>, NMetadata<O>>(o_ref);
                         std::mem::drop(o);

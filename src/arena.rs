@@ -70,26 +70,26 @@ impl ArenaMetadata {
     pub fn inc_rc(&mut self) {
         self.strong_rc += 1;
         self.rc += 1;
-        //println!("inc_rc s {} t {}", self.strong_rc, self.rc);
+        trace!("inc_rc s {} t {}", self.strong_rc, self.rc);
     }
 
     #[inline(always)]
     pub fn dec_rc(&mut self) {
         self.strong_rc -= 1;
         self.rc -= 1;
-        //println!("dec_rc s {} t {}", self.strong_rc, self.rc);
+        trace!("dec_rc s {} t {}", self.strong_rc, self.rc);
     }
 
     #[inline(always)]
     pub fn inc_weak(&mut self) {
         self.rc += 1;
-        //println!("inc_wk s {} t {}", self.strong_rc, self.rc);
+        trace!("inc_wk s {} t {}", self.strong_rc, self.rc);
     }
 
     #[inline(always)]
     pub fn dec_weak(&mut self) {
         self.rc -= 1;
-        //println!("dec_wk s {} t {}", self.strong_rc, self.rc);
+        trace!("dec_wk s {} t {}", self.strong_rc, self.rc);
     }
 
     unsafe fn push_drop_fn<T>(&mut self, data: *const u8) -> Result<*const Option<DropItem>, UploadError> {
@@ -347,7 +347,7 @@ impl Arena {
 
     /// Clone as `WeakArena`.
     pub fn to_weak_arena(&self) -> WeakArena {
-        //println!("split weak arena");
+        trace!("split weak arena");
         unsafe { self.md().inc_weak() };
         WeakArena {
             metadata: self.metadata,
@@ -401,7 +401,7 @@ impl WeakArena {
     /// Try to upgrade `WeakArena` to `Arena`.
     pub fn arena(&self) -> Option<Arena> {
         if self.is_alive() {
-            //println!("upgrade weak to strong arena");
+            trace!("upgrade weak to strong arena");
             unsafe { self.md().inc_rc() };
             Some(Arena {
                 metadata: self.metadata,
@@ -414,7 +414,7 @@ impl WeakArena {
 
 impl Clone for Arena {
     fn clone(&self) -> Self {
-        //println!("clone arena");
+        trace!("clone arena");
         let metadata = self.metadata;
         unsafe { (*metadata).inc_rc(); }
         Arena {
@@ -425,7 +425,7 @@ impl Clone for Arena {
 
 impl Clone for WeakArena {
     fn clone(&self) -> Self {
-        //println!("clone weak");
+        trace!("clone weak");
         let metadata = self.metadata;
         unsafe { (*metadata).inc_weak(); }
         WeakArena {
@@ -436,18 +436,18 @@ impl Clone for WeakArena {
 
 impl Drop for Arena {
     fn drop(&mut self) {
-        //println!("drop arena");
+        trace!("drop arena");
 
         let metadata = unsafe { self.md() };
         (*metadata).dec_rc();
 
         if (*metadata).strong_rc == 0 {
-            //println!("drop arena objects");
+            trace!("drop arena objects");
             unsafe { (*metadata).drop_objects() };
         }
 
         if (*metadata).rc == 0 {
-            //println!("reclaim memory");
+            trace!("reclaim memory");
             unsafe { metadata.reclaim_memory() };
             // this should be the last use of this metadata
         }
@@ -456,13 +456,13 @@ impl Drop for Arena {
 
 impl Drop for WeakArena {
     fn drop(&mut self) {
-        //println!("drop weak arena");
+        trace!("drop weak arena");
 
         let metadata = unsafe { self.md() };
         (*metadata).dec_weak();
 
         if (*metadata).rc == 0 {
-            //println!("reclaim memory");
+            trace!("reclaim memory");
             unsafe { metadata.reclaim_memory() };
             // this should be the last use of this metadata
         }

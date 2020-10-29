@@ -310,6 +310,7 @@
 //! It should be possible to implement custom structures for `memur`, all unsafe machinery
 //! should be accessible.
 
+mod logging;
 mod droplist;
 mod dontdothis;
 mod block;
