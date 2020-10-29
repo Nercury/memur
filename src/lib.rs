@@ -147,7 +147,7 @@
 //!     let arena = Arena::new(&mem).unwrap();
 //!
 //!     let a = N::new(&arena, Wrapper::new(|| order.borrow_mut().push("dropped a"))).unwrap();
-//!     let b = a.outlives(Wrapper::new(|| order.borrow_mut().push("dropped b")));
+//!     let b = a.outlives(Wrapper::new(|| order.borrow_mut().push("dropped b"))).unwrap();
 //! }
 //!
 //! assert_eq!("dropped b", order.borrow()[0]);
@@ -188,8 +188,7 @@
 //!     let arena = Arena::new(&mem).unwrap();
 //!
 //!     // this `into_iter` returns fixed size iterator
-//!     // but you probably would not use vecs together with memur
-//!     let a = Array::new(&arena, vec![1, 2].into_iter()).unwrap();
+//!     let a = Array::new(&arena, (0..2).into_iter()).unwrap();
 //!
 //!     assert_eq!(a.len(), Some(2));
 //!

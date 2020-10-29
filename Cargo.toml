@@ -1,5 +1,14 @@
 [package]
 name = "memur"
 version = "0.1.0"
-authors = ["Nerijus Arlauskas <nercury@gmail.com>"]
+authors = ["The memur Developers"]
 edition = "2018"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+description = "Arena storage with bells and whistles."
+repository = "https://github.com/Nercury/memur"
+keywords = ["arena", "any", "allocator", "memory"]
+categories = ["memory-management"]
+
+[badges]
+travis-ci = { repository = "Nercury/memur" }
