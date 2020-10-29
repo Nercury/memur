@@ -1,6 +1,6 @@
 [package]
 name = "memur"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["The memur Developers"]
 edition = "2018"
 readme = "README.md"
@@ -9,6 +9,7 @@ description = "Arena storage with bells and whistles."
 repository = "https://github.com/Nercury/memur"
 keywords = ["arena", "any", "allocator", "memory"]
 categories = ["memory-management"]
+documentation = "https://docs.rs/memur"
 
 [features]
 default = []

@@ -6,7 +6,7 @@
 Arena storage with its own basic allocator, managed drop order, efficient and optional
 drop execution, universal string, list, array, and custom structure/data support. 
 
-See more comprehensive writeup in crate documentation.
+See more comprehensive writeup in [crate documentation](https://docs.rs/memur).
 
 Some idea of how the usage looks like:
 
