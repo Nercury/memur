@@ -125,7 +125,7 @@ pub unsafe fn drop<T: Sized>(bytes: *const u8) {
     let ptr_to_t = bytes as *const T;
     debug_assert_eq!(ptr_to_t.align_offset(std::mem::align_of::<T>()), 0, "drop alignment incorrect");
     let ref_to_t = std::mem::transmute::<*const u8, &T>(bytes);
-    std::mem::transmute_copy::<T, T>(ref_to_t);
+    let _ = std::mem::transmute_copy::<T, T>(ref_to_t);
 }
 
 #[cfg(test)]

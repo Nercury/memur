@@ -318,6 +318,7 @@ mod arena;
 mod memory;
 mod list;
 mod array;
+mod array_uninit;
 mod ustr;
 mod n;
 mod traits;
@@ -325,7 +326,8 @@ mod iter;
 
 pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
-pub use array::{Array, UninitArray, ArrayInitializer};
+pub use array::{Array, ArrayInitializer};
+pub use array_uninit::{UninitArray};
 pub use ustr::{UStr, UStrError};
 pub use arena::{WeakArena, Arena, UploadError};
 pub use n::N;
