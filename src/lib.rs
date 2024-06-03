@@ -180,7 +180,7 @@
 //! First, it can be initialized from a fixed-size iterator:
 //!
 //! ```
-//! use memur::{Memory, Arena, Array};
+//! use memur::{Memory, Arena, FixedArray};
 //!
 //! let mem = Memory::new();
 //!
@@ -188,7 +188,7 @@
 //!     let arena = Arena::new(&mem).unwrap();
 //!
 //!     // this `into_iter` returns fixed size iterator
-//!     let a = Array::new(&arena, (0..2).into_iter()).unwrap();
+//!     let a = FixedArray::new(&arena, (0..2).into_iter()).unwrap();
 //!
 //!     assert_eq!(a.len(), Some(2));
 //!
@@ -205,12 +205,12 @@
 //! Another safe way to initalize the array is to use the initializer:
 //!
 //! ```
-//! use memur::{Memory, Arena, Array};
+//! use memur::{Memory, Arena, FixedArray};
 //!
 //! let mem = Memory::new();
 //! let arena = Arena::new(&mem).unwrap();
 //!
-//! let uninitialized_array = Array::with_capacity(&arena, 2).unwrap();
+//! let uninitialized_array = FixedArray::with_capacity(&arena, 2).unwrap();
 //! let mut initializer = uninitialized_array.start_initializer();
 //!
 //! initializer.push(1);
@@ -224,12 +224,12 @@
 //! The unsafe, or "C-way" is useful to allow some other code to fill the array contents:
 //!
 //! ```
-//! use memur::{Memory, Arena, Array};
+//! use memur::{Memory, Arena, FixedArray};
 //!
 //! let mem = Memory::new();
 //! let arena = Arena::new(&mem).unwrap();
 //!
-//! let mut uninitialized_array = Array::<i32>::with_capacity(&arena, 2).unwrap();
+//! let mut uninitialized_array = FixedArray::<i32>::with_capacity(&arena, 2).unwrap();
 //!
 //! unsafe { *(uninitialized_array.data_mut().offset(0)) = 1 }
 //! unsafe { *(uninitialized_array.data_mut().offset(1)) = 2 }
@@ -317,7 +317,7 @@ mod block;
 mod arena;
 mod memory;
 mod list;
-mod array;
+mod array_fixed;
 mod array_uninit;
 mod ustr;
 mod n;
@@ -326,7 +326,7 @@ mod iter;
 
 pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
-pub use array::{Array, ArrayInitializer};
+pub use array_fixed::{FixedArray, ArrayInitializer};
 pub use array_uninit::{UninitArray};
 pub use ustr::{UStr, UStrError};
 pub use arena::{WeakArena, Arena, UploadError};

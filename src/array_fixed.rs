@@ -28,7 +28,7 @@ impl<T> ArrayInitializer<T> where T: Sized {
 
     /// Calling this function finalizes the array initialization. The number of items added over
     /// this initializer should be lower or equal `UninitArray` length.
-    pub fn initialized(self) -> Option<Array<T>> {
+    pub fn initialized(self) -> Option<FixedArray<T>> {
         if self.initialized_len > self.uninit_array.capacity() {
             None
         } else {
@@ -38,12 +38,12 @@ impl<T> ArrayInitializer<T> where T: Sized {
 }
 
 /// Continuous memory block containing many elements of the same type.
-pub struct Array<T> where T: Sized {
+pub struct FixedArray<T> where T: Sized {
     pub (crate) _arena: WeakArena,
     pub (crate) _metadata: *mut ArrayMetadata<T>,
 }
 
-impl<T> Array<T> where T: Sized {
+impl<T> FixedArray<T> where T: Sized {
     const fn aligned_item_size() -> usize {
         next_item_aligned_start::<T>(std::mem::size_of::<T>())
     }
@@ -89,7 +89,7 @@ impl<T> Array<T> where T: Sized {
     }
 
     /// Creates a new array and places the data to it.
-    pub fn new(arena: &Arena, iter: impl ExactSizeIterator<Item=T>) -> Result<Array<T>, UploadError> {
+    pub fn new(arena: &Arena, iter: impl ExactSizeIterator<Item=T>) -> Result<FixedArray<T>, UploadError> {
         unsafe {
             let len = iter.len();
             let metadata = arena.upload_no_drop::<ArrayMetadata<T>>(ArrayMetadata::<T> {
@@ -123,7 +123,7 @@ impl<T> Array<T> where T: Sized {
                 std::mem::forget(item);
             }
 
-            Ok(Array {
+            Ok(FixedArray {
                 _arena: arena.to_weak_arena(),
                 _metadata: metadata,
             })
@@ -185,7 +185,7 @@ impl<T> Array<T> where T: Sized {
     }
 }
 
-impl<T> Index<Range<usize>> for Array<T> {
+impl<T> Index<Range<usize>> for FixedArray<T> {
     type Output = [T];
 
     #[inline(always)]
@@ -194,14 +194,14 @@ impl<T> Index<Range<usize>> for Array<T> {
     }
 }
 
-impl<T> IndexMut<Range<usize>> for Array<T> {
+impl<T> IndexMut<Range<usize>> for FixedArray<T> {
     #[inline(always)]
     fn index_mut(&mut self, range: Range<usize>) -> &mut [T] {
         &mut self.as_mut()[range.start..range.end]
     }
 }
 
-impl<T> Index<RangeFrom<usize>> for Array<T> {
+impl<T> Index<RangeFrom<usize>> for FixedArray<T> {
     type Output = [T];
 
     #[inline(always)]
@@ -210,14 +210,14 @@ impl<T> Index<RangeFrom<usize>> for Array<T> {
     }
 }
 
-impl<T> IndexMut<RangeFrom<usize>> for Array<T> {
+impl<T> IndexMut<RangeFrom<usize>> for FixedArray<T> {
     #[inline(always)]
     fn index_mut(&mut self, range: RangeFrom<usize>) -> &mut [T] {
         &mut self.as_mut()[range.start..]
     }
 }
 
-impl<T> Index<RangeTo<usize>> for Array<T> {
+impl<T> Index<RangeTo<usize>> for FixedArray<T> {
     type Output = [T];
 
     #[inline(always)]
@@ -226,14 +226,14 @@ impl<T> Index<RangeTo<usize>> for Array<T> {
     }
 }
 
-impl<T> IndexMut<RangeTo<usize>> for Array<T> {
+impl<T> IndexMut<RangeTo<usize>> for FixedArray<T> {
     #[inline(always)]
     fn index_mut(&mut self, range: RangeTo<usize>) -> &mut [T] {
         &mut self.as_mut()[..range.end]
     }
 }
 
-impl<T> Index<RangeToInclusive<usize>> for Array<T> {
+impl<T> Index<RangeToInclusive<usize>> for FixedArray<T> {
     type Output = [T];
 
     #[inline(always)]
@@ -242,14 +242,14 @@ impl<T> Index<RangeToInclusive<usize>> for Array<T> {
     }
 }
 
-impl<T> IndexMut<RangeToInclusive<usize>> for Array<T> {
+impl<T> IndexMut<RangeToInclusive<usize>> for FixedArray<T> {
     #[inline(always)]
     fn index_mut(&mut self, range: RangeToInclusive<usize>) -> &mut [T] {
         &mut self.as_mut()[..=range.end]
     }
 }
 
-impl<T> Index<RangeFull> for Array<T> {
+impl<T> Index<RangeFull> for FixedArray<T> {
     type Output = [T];
 
     #[inline(always)]
@@ -258,14 +258,14 @@ impl<T> Index<RangeFull> for Array<T> {
     }
 }
 
-impl<T> IndexMut<RangeFull> for Array<T> {
+impl<T> IndexMut<RangeFull> for FixedArray<T> {
     #[inline(always)]
     fn index_mut(&mut self, _: RangeFull) -> &mut [T] {
         self.as_mut()
     }
 }
 
-impl<T> Index<usize> for Array<T> {
+impl<T> Index<usize> for FixedArray<T> {
     type Output = T;
 
     #[inline(always)]
@@ -274,35 +274,35 @@ impl<T> Index<usize> for Array<T> {
     }
 }
 
-impl<T> IndexMut<usize> for Array<T> {
+impl<T> IndexMut<usize> for FixedArray<T> {
     #[inline(always)]
     fn index_mut(&mut self, index: usize) -> &mut T {
         &mut self.as_mut()[index]
     }
 }
 
-impl<T> AsRef<[T]> for Array<T> {
+impl<T> AsRef<[T]> for FixedArray<T> {
     #[inline(always)]
     fn as_ref(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts((*self._metadata)._data as *const T, (*self._metadata)._len) }
     }
 }
 
-impl<T> AsMut<[T]> for Array<T> {
+impl<T> AsMut<[T]> for FixedArray<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [T] {
         unsafe { std::slice::from_raw_parts_mut((*self._metadata)._data as *mut T, (*self._metadata)._len) }
     }
 }
 
-impl<T> Borrow<[T]> for Array<T> {
+impl<T> Borrow<[T]> for FixedArray<T> {
     #[inline(always)]
     fn borrow(&self) -> &[T] {
         self.as_ref()
     }
 }
 
-impl<T> std::fmt::Debug for Array<T> where T: std::fmt::Debug, T: Sized {
+impl<T> std::fmt::Debug for FixedArray<T> where T: std::fmt::Debug, T: Sized {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut list = f.debug_list();
         for i in self.iter() {
@@ -314,13 +314,13 @@ impl<T> std::fmt::Debug for Array<T> where T: std::fmt::Debug, T: Sized {
 
 #[cfg(test)]
 mod array {
-    use crate::{Memory, Arena, Array, MemurIterator};
+    use crate::{Memory, Arena, FixedArray, MemurIterator};
 
     #[test]
     fn has_items_when_iterating() {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
-        let items = Array::new(&arena, (0..12).map(|v| v as i64)).unwrap();
+        let items = FixedArray::new(&arena, (0..12).map(|v| v as i64)).unwrap();
         for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i64)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
@@ -330,7 +330,7 @@ mod array {
     fn has_items_when_iterating_items_i8() {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
-        let items = Array::new(&arena, (0..12).map(|v| v as i8)).unwrap();
+        let items = FixedArray::new(&arena, (0..12).map(|v| v as i8)).unwrap();
         for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i8)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
@@ -340,7 +340,7 @@ mod array {
     fn has_items_when_iterating_items_i16() {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
-        let items = Array::new(&arena, (0..12).map(|v| v as i16)).unwrap();
+        let items = FixedArray::new(&arena, (0..12).map(|v| v as i16)).unwrap();
         for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i16)).enumerate() {
             assert_eq!(*item, expected, "at index {}", i);
         }
@@ -351,7 +351,7 @@ mod array {
         let memory = Memory::new();
         let arena = Arena::new(&memory).unwrap();
 
-        let items3 = Array::new(
+        let items3 = FixedArray::new(
             &arena,
             (0..12)
                 .map(|v| v as i16)
@@ -374,9 +374,9 @@ mod array {
     #[test]
     fn has_items_when_iterating_items_i16_but_not_when_arena_is_dead() {
         let memory = Memory::new();
-        let items: Array<i16> = {
+        let items: FixedArray<i16> = {
             let arena = Arena::new(&memory).unwrap();
-            let items = Array::new(&arena, (0..12).map(|v| v as i16)).unwrap();
+            let items = FixedArray::new(&arena, (0..12).map(|v| v as i16)).unwrap();
             for (i, (item, expected)) in items.iter().zip((0..12).map(|v| v as i16)).enumerate() {
                 assert_eq!(*item, expected, "at index {}", i);
             }

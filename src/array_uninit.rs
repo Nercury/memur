@@ -1,5 +1,5 @@
 use std::ptr::null_mut;
-use crate::{Array, ArrayInitializer, WeakArena};
+use crate::{FixedArray, ArrayInitializer, WeakArena};
 
 /// Continuous memory block containing uninitialized elements of the same type, and can be used to
 /// initialize the `Array`.
@@ -34,12 +34,12 @@ impl<T> UninitArray<T> where T: Sized {
     /// This function assumes the `len` items in `UninitArray` are properly initialized
     /// and returns `Array` that points to the same memory. Any uninitialized items are not
     /// re-claimed.
-    pub unsafe fn initialized_to_len(self, len: usize) -> Array<T> {
+    pub unsafe fn initialized_to_len(self, len: usize) -> FixedArray<T> {
         if len > self._capacity {
             panic!("set_len exceeds capacity");
         }
         (*self._metadata)._len = len;
-        Array {
+        FixedArray {
             _arena: self._arena,
             _metadata: self._metadata,
         }
@@ -67,7 +67,7 @@ pub (crate) fn drop_array<T>(data: *const u8) {
 
     let len = metadata._len;
     metadata._len = 0;
-    for item_ptr in unsafe { Array::<T>::iter_impl(metadata._data as *const u8, len) } {
+    for item_ptr in unsafe { FixedArray::<T>::iter_impl(metadata._data as *const u8, len) } {
         let item_ref: &T = unsafe { std::mem::transmute::<*const T, &T>(item_ptr) };
         let item: T = unsafe { std::mem::transmute_copy::<T, T>(item_ref) };
         std::mem::drop(item);
