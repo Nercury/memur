@@ -359,11 +359,11 @@ mod array {
             .unwrap()
             .iter()
             .map(|i: &i16| *i)
-            .collect_array(&arena)
+            .collect_fixed_array(&arena)
             .unwrap()
             .safer_iter().unwrap()
             .map(|i: &i16| *i)
-            .collect_array(&arena)
+            .collect_fixed_array(&arena)
             .unwrap();
 
         for (i, (item, expected)) in items3.iter().zip((0..12).map(|v| v as i16)).enumerate() {

@@ -1,314 +1,181 @@
-//! Grow-only Arena implementation for structures of any type that also ensures fast end efficient
-//! drop order. It also has some common types that makes efficient use of `Arena` properties.
+//! A Grow-Only Arena Library for Bump Allocation with Proper Drop Handling
 //!
-//! ## What is Arena?
+//! This library is primarily intended for use cases where bump allocation is desired. Additionally,
+//! memur ensures that every item added to the arena has its
+//! drop function executed. Because running drop for a large number of items cause many cache misses,
+//! memur stores its droplists inline within the arena, close to the data to be dropped.
 //!
-//! There are several use cases when arena allocation pattern is desired.
+//! ## Overview
 //!
-//! One of them is when we do not want to track the value ownership and lifetimes. Instead, we
-//! have a known point when all the data inside the arena should be deallocated.
-//! As an example, consider a game level. It may contain many objects, but we know we will
-//! deallocate them all at the same time when the level is no longer in use, and kind of don't
-//! care anymore about the object contents.
+//! The library provides several types to manage memory using bump allocation:
 //!
-//! Another use case is when we want to ensure that objects are nearby in the memory.
-//! This kind of arena copies the value contents into a memory block and then only allows us to
-//! access the value over a pointer.
+//! - **Memory & Arena** – `Memory` serves as a shared memory pool (which can be cloned and used
+//!   across threads), while `Arena` draws blocks from it. Note that an `Arena` does not reclaim
+//!   memory on its own; to clean up, a new `Arena` is typically created.
 //!
-//! `memur` cares about both of these use-cases. It allows us to place any type of object into the
-//! `Arena`, and ensures their `Drop` function is executed. It is also possible to explicitly
-//! place a struct into the `Arena` that has no drop function. One of such built-in structures is
-//! `UStr` type that holds a string.
+//! - **UStr** – A universal string type that holds a zero-terminated UTF8 string. `UStr` does not
+//!   add a drop function to the arena, making it efficient for applications that use many strings.
 //!
-//! ## `memur` is grow-only Arena
+//! - **FixedArray** – A fixed-length array with several initialization strategies:
+//!   - Initialization from a fixed-size iterator.
+//!   - A safe initializer that allows incremental insertion.
+//!   - An unsafe “C-style” initialization.
+//!   All elements in a `FixedArray` are dropped when the arena is dropped.
 //!
-//! While `memur` will take care of dropping the values once there are no remaining `Arena`
-//! references, re-claiming the memory is a no-goal of this library. Instead, the idea is to
-//! create another `Arena`, and place a fresh set of values there.
+//! - **Growable Array (Array)** – A dynamic, Vec-like array implementation.
 //!
-//! Also, the underlying `Memory` container that issues memory blocks to `Arena` never
-//! automatically deallocates memory. Instead, the user of this library should know best when
-//! it is the time for a cleanup, and call the `cleanup` function.
+//!   **Pros:**
+//!     - Provides push and pop operations with full drop safety.
+//!     - Familiar API for users of Vec.
 //!
-//! ## Some `memur` features
+//!   **Cons:**
+//!     - Items are allocated individually, so they are not stored contiguously.
+//!     - Pointer indirection incurs a slight overhead compared to a contiguous FixedArray or List.
 //!
-//! ### `Memory` can be cloned between threads, `Arena` and collection objects can not
+//! - **List** – A simple, growable list where items are stored non-contiguously.
+//!   It keeps related metadata close to the data, but it does not support indexing or cloning.
 //!
-//! The `Memory` is "issuer of memory blocks", or a Pool. It can be cloned and it will still
-//! reference the same internal implementation. It can be shared between threads as needed.
+//! Additionally, helper `MemurIterator` trait is provided to collect iterators into a `List` `FixedArray`, or `Array`
+//! (since the standard library’s `collect` does not work directly with arena types).
 //!
-//! The `Arena` is a "user of memory blocks". It draws new memory blocks as required from the
-//! `Memory` pool.
+//! ## Memory, Arena, and Drop Behavior
 //!
-//! Its sibling the `WeakArena` is used to avoid reference cycles and can be stored inside
-//! the structures to get a quick access to `Arena`. However, this will return `None` when
-//! the `Arena` goes out of scope.
+//! The core types `Memory` and `Arena` manage the allocation and deallocation of objects.
+//! When an object is placed into the arena, a pointer to its drop function is stored in an
+//! inlined droplist. This ensures that when the `Arena` is dropped, all items are properly cleaned up.
 //!
-//! `Arena` and `WeakArena` can also be cloned, but can not be passed to another thread.
+//! Example:
 //!
-//! ### Efficient droplists
+//! ```rust
+//! use memur::{Memory, Arena};
 //!
-//! When a value is placed into the `Arena` memory block, a pointer is also added to a function
-//! that will drop this value once the `Arena` is no longer in use. This function is placed
-//! into an empty droplist slot. The `Arena` keeps track of the first and last droplists.
-//! Last droplist is used to push another function as mentioned, and the first droplist is
-//! used to execute drop for all arena objects. The droplists themselves are daisy-chained together
-//! as a linked list and end up interleaved in the memory between the objects to be dropped, making
-//! their execution efficient.
-//!
-//! ### No-drop universal string type `UStr`
-//!
-//! UStr holds an UTF8 string that is zero-terminated. Instead of converting between `String` and
-//! `CString` types, `UStr` can be safely interpreted as both. In addition to that, `UStr` does
-//! not add a drop function to arena, perfect for applications with tons of strings of different
-//! lengths. The downside of `UStr` is that it contains the `WeakArena` reference inside to ensure
-//! safety.
-//!
+//! let mem = Memory::new();
+//! {
+//!     let arena = Arena::new(&mem).unwrap();
+//!     // Allocate objects within the arena.
+//! }
+//! // When the arena goes out of scope, all allocated objects are dropped.
 //! ```
+//!
+//! ## UStr
+//!
+//! `UStr` holds a zero-terminated UTF8 string and can be interpreted as both a Rust string and a C string.
+//! It avoids the overhead of a drop function, making it suitable for applications with many strings.
+//!
+//! ```rust
 //! use memur::{Memory, Arena, UStr};
 //! use std::ffi::CStr;
 //!
 //! let mem = Memory::new();
-//!
 //! {
-//!     let text = {
-//!         let arena = Arena::new(&mem).unwrap();
-//!
-//!         let text = UStr::from_str(&arena, "Hello").unwrap();
-//!
-//!         assert_eq!("Hello", &text);
-//!         assert_eq!(unsafe { CStr::from_bytes_with_nul_unchecked(b"Hello\n") }, &text);
-//!
-//!         // The arena is dropped here, but since the UStr holds WeakArena,
-//!         // it can still be used.
-//!
-//!         text
-//!     };
+//!     let arena = Arena::new(&mem).unwrap();
+//!     let text = UStr::from_str(&arena, "Hello").unwrap();
 //!
 //!     assert_eq!("Hello", &text);
-//!     assert_eq!(unsafe { CStr::from_bytes_with_nul_unchecked(b"Hello\n") }, &text);
-//!
-//!     // The memory is reclaimed here since the last instance of `WeakArena` is gone
+//!     assert_eq!(unsafe { CStr::from_bytes_with_nul(b"Hello\0") }
+//!                    .unwrap()
+//!                    .to_str()
+//!                    .unwrap(), &text);
 //! }
+//! // The memory is reclaimed when the arena is dropped.
 //! ```
 //!
-//! ### Control of the drop order with `N<T>`
+//! ## FixedArray
 //!
-//! There is a seemingly useless type that allows uploading a struct to arena. But in addition to
-//! that, it can also be used to ensure that a struct will be dropped after a previously added
-//! struct. Consider this example:
+//! `FixedArray` provides a fixed-length array with multiple initialization options.
+//! All elements are dropped when the arena is dropped. Access functions return `Option`
+//! to indicate that data may no longer be available after cleanup.
 //!
-//! ```
-//! use memur::{Memory, Arena, N};
-//!
-//! let mem = Memory::new();
-//! let order = std::cell::RefCell::new(Vec::new()); // pardon my use of RefCell
-//!
-//! {
-//!     let arena = Arena::new(&mem).unwrap();
-//!
-//!     let a = N::new(&arena, Wrapper::new(|| order.borrow_mut().push("dropped a"))).unwrap();
-//!     let b = N::new(&arena, Wrapper::new(|| order.borrow_mut().push("dropped b"))).unwrap();
-//! }
-//!
-//! assert_eq!("dropped a", order.borrow()[0]);
-//! assert_eq!("dropped b", order.borrow()[1]);
-//!
-//! // Testing this drop functionality requires creating some example structure that executes
-//! // our closure when it is dropped:
-//!
-//! struct Wrapper<F: FnMut()> {
-//!     execute_on_drop: F,
-//! }
-//!
-//! impl<F: FnMut()> Wrapper<F> {
-//!     pub fn new(execute_on_drop: F) -> Wrapper<F> {
-//!         Wrapper { execute_on_drop }
-//!     }
-//! }
-//!
-//! impl<F: FnMut()> Drop for Wrapper<F> {
-//!     fn drop(&mut self) {
-//!         (self.execute_on_drop)();
-//!     }
-//! }
-//! ```
-//!
-//! So, the above succeeds because droplists drop items sequentialy.
-//! If we wanted to ensure that `a` is dropped after `b`, we can do this instead:
-//!
-//! ```
-//! use memur::{Memory, Arena, N};
-//!
-//! let mem = Memory::new();
-//! let order = std::cell::RefCell::new(Vec::new()); // pardon my use of RefCell
-//!
-//! {
-//!     let arena = Arena::new(&mem).unwrap();
-//!
-//!     let a = N::new(&arena, Wrapper::new(|| order.borrow_mut().push("dropped a"))).unwrap();
-//!     let b = a.outlives(Wrapper::new(|| order.borrow_mut().push("dropped b"))).unwrap();
-//! }
-//!
-//! assert_eq!("dropped b", order.borrow()[0]);
-//! assert_eq!("dropped a", order.borrow()[1]);
-//! #
-//! # struct Wrapper<F: FnMut()> {
-//! #     execute_on_drop: F,
-//! # }
-//! #
-//! # impl<F: FnMut()> Wrapper<F> {
-//! #     pub fn new(execute_on_drop: F) -> Wrapper<F> {
-//! #         Wrapper { execute_on_drop }
-//! #     }
-//! # }
-//! #
-//! # impl<F: FnMut()> Drop for Wrapper<F> {
-//! #     fn drop(&mut self) {
-//! #         (self.execute_on_drop)();
-//! #     }
-//! # }
-//! ```
-//!
-//! You can imagine this being useful when wrapping low level graphics APIs. Also everything that is
-//! needed to perform this is contained in the same memory block with no additional alocations.
-//!
-//! ### Array
-//!
-//! A fixed-length array. It can't be cloned (and point to the same memory).
-//! There are three ways to initialize this array. One of them is unsafe. All are efficient.
-//! First, it can be initialized from a fixed-size iterator:
-//!
-//! ```
+//! ```rust
 //! use memur::{Memory, Arena, FixedArray};
 //!
 //! let mem = Memory::new();
-//!
-//! let a = {
+//! let array = {
 //!     let arena = Arena::new(&mem).unwrap();
-//!
-//!     // this `into_iter` returns fixed size iterator
-//!     let a = FixedArray::new(&arena, (0..2).into_iter()).unwrap();
-//!
-//!     assert_eq!(a.len(), Some(2));
-//!
-//!     a
+//!     let array = FixedArray::new(&arena, (0..2)).unwrap();
+//!     assert_eq!(array.len(), Some(2));
+//!     array
 //! };
 //!
-//! assert_eq!(a.len(), None); // when arena goes out of scope, the len can not be retrieved
+//! // After the arena is dropped, accessing the array returns None.
+//! assert_eq!(array.len(), None);
 //! ```
 //!
-//! The `Array` properly drops items when the arena goes out of scope. This means that unlike `UStr`,
-//! all attempts to access the `Array` are checked (because the struct drop functions might
-//! have executed). That's why the `len` and many other functions wrap results in the `Option`.
+//! ## Growable Array (Array)
 //!
-//! Another safe way to initalize the array is to use the initializer:
+//! The new `Array` type offers a dynamic, Vec-like interface for arena allocation.
+//! Items are allocated individually and stored via a pointer table that is resized as needed.
 //!
-//! ```
-//! use memur::{Memory, Arena, FixedArray};
+//! **Pros:**
+//! - Dynamic sizing with push/pop operations.
+//! - Familiar API for those accustomed to Vec.
+//! - Full drop safety for each element.
+//!
+//! **Cons:**
+//! - Items are not stored contiguously, which may limit certain operations (e.g., slicing).
+//! - Additional overhead due to pointer indirection.
+//!
+//! Example:
+//!
+//! ```rust
+//! use memur::{Memory, Arena, Array};
 //!
 //! let mem = Memory::new();
-//! let arena = Arena::new(&mem).unwrap();
-//!
-//! let uninitialized_array = FixedArray::with_capacity(&arena, 2).unwrap();
-//! let mut initializer = uninitialized_array.start_initializer();
-//!
-//! initializer.push(1);
-//! initializer.push(2);
-//!
-//! let a = initializer.initialized().unwrap(); // number of pushes must be lower or equal capacity
-//!
-//! assert_eq!(a.len(), Some(2));
+//! let mut arena = Arena::new(&mem).unwrap();
+//! let mut array = Array::new(&arena).unwrap();
+//! array.push(42).unwrap();
+//! array.push(7).unwrap();
+//! assert_eq!(array.len().unwrap(), 2);
+//! assert_eq!(array.pop(), Some(7));
 //! ```
 //!
-//! The unsafe, or "C-way" is useful to allow some other code to fill the array contents:
+//! As mentioned before, no actual memory is reclaimed until the whole Arena is dropped.
 //!
-//! ```
-//! use memur::{Memory, Arena, FixedArray};
+//! ## List
 //!
-//! let mem = Memory::new();
-//! let arena = Arena::new(&mem).unwrap();
+//! `List` is a simple growable collection in which items are not stored contiguously.
+//! It is efficient and keeps related metadata near the data but does not support indexing
+//! or cloning.
 //!
-//! let mut uninitialized_array = FixedArray::<i32>::with_capacity(&arena, 2).unwrap();
-//!
-//! unsafe { *(uninitialized_array.data_mut().offset(0)) = 1 }
-//! unsafe { *(uninitialized_array.data_mut().offset(1)) = 2 }
-//!
-//! let a = unsafe { uninitialized_array.initialized_to_len(2) };
-//!
-//! assert_eq!(a.len(), Some(2));
-//! assert_eq!(a[0], 1);
-//! assert_eq!(a[1], 2);
-//! ```
-//!
-//! `Array` guarantees that all items are in a continuous memory location.
-//!
-//! ### List
-//!
-//! List can be grown, but the items are not in a continuous memory location. Instead,
-//! item data pointers are stored in the fixed size metadata blocks, interleaved with
-//! the items themselves:
-//!
-//! ```text ignore
-//! meta1[*item1 .. *itemN *meta2] item1 .. itemN meta2[*itemN+1 .. emptyslotM *null]
-//! ```
-//!
-//! There is metadata that contains a pointer to actual item data that may not follow the metadata:
-//! it all depends when a new item was pushed to the list. But generally, this should have a property
-//! of keeping the item data close to the each metadata block. If the item itself is a list or
-//! array, you can imagine all the data ending up nearby.
-//!
-//! List usage is simpler than implementation:
-//!
-//! ```
+//! ```rust
 //! use memur::{Memory, Arena, List};
 //!
 //! let mem = Memory::new();
 //! let arena = Arena::new(&mem).unwrap();
-//!
 //! let mut list = List::new(&arena).unwrap();
-//!
 //! list.push(1).unwrap();
 //! list.push(2).unwrap();
-//!
-//! assert_eq!(list.len(), 2); // list len is not stored in arena, unlike vec len
-//! assert_eq!(list.iter().skip(0).next(), Some(&1));
-//! assert_eq!(list.iter().skip(1).next(), Some(&2));
+//! assert_eq!(list.len(), 2);
 //! ```
 //!
-//! There are few downsides of `List`: it can't be indexed into, and it can't be cloned.
+//! ## Collection Helpers
 //!
-//! ### `collect` helpers
+//! Because creating a new `List`, `Array` or `FixedArray` requires specifying the `Arena`, standard
+//! collection methods cannot be used directly. memur provides MemurIterator trait to collect
+//! iterators into these types.
 //!
-//! The `std` lib `collect` can not work with this library, because creating a new `List` or `Array`
-//! requires knowledge of which `Arena` to use.
-//!
-//! That's why there is a helper trait for that, which so far has the simple `collect_list` and
-//! `collect_array`, nothing fancy.
-//!
-//! ```
-//! use memur::{Memory, Arena, List, MemurIterator};
+//! ```rust
+//! use memur::{Memory, Arena, MemurIterator};
 //!
 //! let mem = Memory::new();
 //! let arena = Arena::new(&mem).unwrap();
-//!
-//! let mut list = List::new(&arena).unwrap();
-//! list.push(1).unwrap();
-//! list.push(2).unwrap();
-//!
-//! let a = list.iter().cloned().collect_array(&arena).unwrap();
-//! assert_eq!(a.len(), Some(2));
-//! assert_eq!(a[0], 1);
-//! assert_eq!(a[1], 2);
-//!
-//! let list2 = a.iter().cloned().collect_list(&arena).unwrap();
-//! assert_eq!(list2.len(), 2);
+//! let array = (0..10).collect_fixed_array(&arena).unwrap();
+//! assert_eq!(array.len().unwrap(), 10);
 //! ```
 //!
-//! ### Custom structures
+//! ## Summary
 //!
-//! It should be possible to implement custom structures for `memur`, all unsafe machinery
-//! should be accessible.
+//! memur is designed for scenarios where bump allocation is desired and proper drop
+//! execution is required. Its inlined droplists reduce cache misses during cleanup, making
+//! drop operations more efficient. Users should evaluate the following trade-offs:
+//!
+//! - **FixedArray and List:** Offer efficient, drop-safe allocation with minimal overhead,
+//!   but are limited to fixed or simple growable collection semantics.
+//!
+//! - **Array (Growable Array):** Provides a dynamic, Vec-like interface with push/pop support
+//!   and full drop safety, at the cost of non-contiguous storage and additional pointer indirection.
+//!
+//! Choose the type that best suits your application's needs.
 
 mod logging;
 mod droplist;
@@ -317,6 +184,7 @@ mod block;
 mod arena;
 mod memory;
 mod list;
+mod array;
 mod array_fixed;
 mod array_uninit;
 mod ustr;
@@ -326,6 +194,7 @@ mod iter;
 
 pub use memory::{Memory, MemoryBuilder};
 pub use list::List;
+pub use array::{Array, ArrayIter, ArrayIterMut};
 pub use array_fixed::{FixedArray, ArrayInitializer};
 pub use array_uninit::{UninitArray};
 pub use ustr::{UStr, UStrError};

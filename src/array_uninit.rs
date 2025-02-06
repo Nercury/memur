@@ -70,7 +70,7 @@ pub (crate) fn drop_array<T>(data: *const u8) {
     for item_ptr in unsafe { FixedArray::<T>::iter_impl(metadata._data as *const u8, len) } {
         let item_ref: &T = unsafe { std::mem::transmute::<*const T, &T>(item_ptr) };
         let item: T = unsafe { std::mem::transmute_copy::<T, T>(item_ref) };
-        std::mem::drop(item);
+        drop(item);
     }
 
     metadata._data = null_mut();
