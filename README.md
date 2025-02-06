@@ -7,8 +7,6 @@ Arena storage with its own basic allocator, managed drop order, efficient and op
 
 See more comprehensive writeup in [crate documentation](https://docs.rs/memur).
 
-Below is a single example demonstrating the usage of several key types provided by memur:
-
 - **UStr** – a universal, zero-terminated UTF-8 string.
 - **FixedArray** – a fixed-size array initialized from an exact-size iterator.
 - **Array** – a dynamic, Vec-like growable array.
