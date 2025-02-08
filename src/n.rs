@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use crate::{WeakArena, Arena, UploadError, DropFn};
 use std::ptr::null_mut;
 
@@ -122,6 +123,16 @@ impl<T> N<T> {
                     _ptr: o_wrapper_ptr,
                 })
             },
+        }
+    }
+}
+
+impl<T> Debug for N<T> where T: Debug {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(v) = self.val() {
+            v.fmt(f)
+        } else {
+            write!(f, "dead")
         }
     }
 }
