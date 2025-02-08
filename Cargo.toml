@@ -1,6 +1,6 @@
 [package]
 name = "memur"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["The memur Developers"]
 edition = "2021"
 readme = "README.md"
