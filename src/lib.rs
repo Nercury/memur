@@ -200,7 +200,7 @@ pub use array_uninit::{UninitArray};
 pub use ustr::{UStr, UStrError};
 pub use arena::{WeakArena, Arena, UploadError};
 pub use n::N;
-pub use traits::MemurIterator;
+pub use traits::{MemurIterator, ToArenaArray, ToArenaFixedArray, ToArenaList};
 pub use droplist::{DropFn, DropItem};
 
 #[cfg(test)]

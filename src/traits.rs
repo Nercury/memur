@@ -49,3 +49,66 @@ impl<Q: Iterator> MemurIterator for Q {
         Ok(array)
     }
 }
+
+/// Converts standard collections (Vec or slice) into an arena–allocated FixedArray.
+///
+/// For owned collections (Vec<T>), the items are moved into the FixedArray;
+/// for borrowed ones (e.g. &[T]), the elements are cloned so T must implement Clone.
+pub trait ToArenaFixedArray<T> {
+    fn to_arena_fixed_array(self, arena: &Arena) -> Result<FixedArray<T>, UploadError>;
+}
+
+/// Converts standard collections (Vec or slice) into an arena–allocated Array.
+///
+/// (Note: For a borrowed slice, T must implement Clone so that the items can be copied.)
+pub trait ToArenaArray<T> {
+    fn to_arena_array(self, arena: &Arena) -> Result<Array<T>, UploadError>;
+}
+
+/// Converts standard collections (Vec or slice) into an arena–allocated List.
+///
+/// (Note: For a borrowed slice, T must implement Clone so that the items can be copied.)
+pub trait ToArenaList<T> {
+    fn to_arena_list(self, arena: &Arena) -> Result<List<T>, UploadError>;
+}
+
+impl<T> ToArenaFixedArray<T> for Vec<T> {
+    fn to_arena_fixed_array(self, arena: &Arena) -> Result<FixedArray<T>, UploadError> {
+        // Consume the Vec, converting its iterator (which is ExactSizeIterator)
+        // into a FixedArray allocated in the arena.
+        FixedArray::new(arena, self.into_iter())
+    }
+}
+
+impl<T: Clone> ToArenaFixedArray<T> for &[T] {
+    fn to_arena_fixed_array(self, arena: &Arena) -> Result<FixedArray<T>, UploadError> {
+        // Iterate over a borrowed slice and clone each element into the new FixedArray.
+        FixedArray::new(arena, self.iter().cloned())
+    }
+}
+
+impl<T> ToArenaArray<T> for Vec<T> {
+    fn to_arena_array(self, arena: &Arena) -> Result<Array<T>, UploadError> {
+        // Convert the Vec into an iterator and then build an Array (growable)
+        Array::from_iter(arena, self.into_iter())
+    }
+}
+
+impl<T: Clone> ToArenaArray<T> for &[T] {
+    fn to_arena_array(self, arena: &Arena) -> Result<Array<T>, UploadError> {
+        // Convert a borrowed slice into an iterator, clone its items and build an Array.
+        Array::from_iter(arena, self.iter().cloned())
+    }
+}
+
+impl<T> ToArenaList<T> for Vec<T> {
+    fn to_arena_list(self, arena: &Arena) -> Result<List<T>, UploadError> {
+        List::from_iter(arena, self.into_iter())
+    }
+}
+
+impl<T: Clone> ToArenaList<T> for &[T] {
+    fn to_arena_list(self, arena: &Arena) -> Result<List<T>, UploadError> {
+        List::from_iter(arena, self.iter().cloned())
+    }
+}

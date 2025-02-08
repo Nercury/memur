@@ -62,6 +62,14 @@ impl<T> FixedArray<T> where T: Sized {
         self.len().unwrap_or(0) == 0
     }
 
+    /// Copies data into Vec
+    pub fn to_vec(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.as_ref().to_vec()
+    }
+
     /// Creates a new array with specified capacity and does not place data to it, the array items are not initialized.
     ///
     /// If array is dropped in this state, nothing happens, because the len is zero.

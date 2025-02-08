@@ -143,6 +143,24 @@ impl<T> List<T> where T: Sized {
 
         Ok(())
     }
+
+    /// Creates a new list by consuming an iterator.
+    pub fn from_iter<I: IntoIterator<Item = T>>(arena: &Arena, iter: I) -> Result<Self, UploadError> {
+        let iter = iter.into_iter();
+        let mut list = List::new(arena)?;
+        for item in iter {
+            list.push(item)?;
+        }
+        Ok(list)
+    }
+
+    /// Copies data to Vec
+    pub fn to_vec(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.iter().cloned().collect()
+    }
 }
 
 impl<T> std::fmt::Debug for List<T> where T: std::fmt::Debug, T: Sized {

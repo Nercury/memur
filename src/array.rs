@@ -73,6 +73,14 @@ impl<T> Array<T> {
         }
     }
 
+    /// Copies data to Vec
+    pub fn to_vec(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.iter().cloned().collect()
+    }
+
     /// Creates a new array by consuming an iterator.
     ///
     /// The capacity is chosen based on the iterator’s size hint (at least 4).
