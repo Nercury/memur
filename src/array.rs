@@ -265,6 +265,16 @@ impl<T> IndexMut<usize> for Array<T> {
     }
 }
 
+impl<T> std::fmt::Debug for Array<T> where T: std::fmt::Debug, T: Sized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut list = f.debug_list();
+        for i in self.iter() {
+            list.entry(i);
+        }
+        list.finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
