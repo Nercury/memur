@@ -136,3 +136,9 @@ impl<T> Debug for N<T> where T: Debug {
         }
     }
 }
+
+impl<T> PartialEq for N<T> where T: PartialEq {
+    fn eq(&self, other: &Self) -> bool {
+        self.val() == other.val()
+    }
+}

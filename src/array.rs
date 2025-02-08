@@ -283,6 +283,13 @@ impl<T> std::fmt::Debug for Array<T> where T: std::fmt::Debug, T: Sized {
     }
 }
 
+impl<T> PartialEq for Array<T> where T: PartialEq, T: Sized {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len()
+            && self.iter().zip(other.iter()).all(|(l, r)| l == r)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;

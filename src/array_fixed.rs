@@ -320,6 +320,12 @@ impl<T> std::fmt::Debug for FixedArray<T> where T: std::fmt::Debug, T: Sized {
     }
 }
 
+impl<T> PartialEq for FixedArray<T> where T: PartialEq, T: Sized {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref() == other.as_ref()
+    }
+}
+
 #[cfg(test)]
 mod array {
     use crate::{Memory, Arena, FixedArray, MemurIterator};
